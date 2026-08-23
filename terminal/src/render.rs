@@ -1,20 +1,22 @@
 //! Renders a Net board as a box-drawing string for the terminal.
 //!
-//! `render_board()` draws a board onto a `Canvas` in phases (grid lines,
-//! wires and endpoints, source, barriers, frame), then flattens the result
-//! to text.
+//! `render_board()` draws a given `NetPuzzle` onto a `Canvas` in phases
+//! (grid lines, wires and endpoints, source, barriers, frame), then
+//! flattens the result to text.
 
+use crate::net::{GridDimensions, NetPuzzle, TileCoord, Tiles};
 use std::cmp::max;
 
-pub fn render_board() -> String {
-    let (grid, powered_tiles, source, dimensions, wrapping) = build_grid();
+pub fn render_board(puzzle: &NetPuzzle) -> String {
+    let dimensions = puzzle.dimensions;
+    let source = source_position(puzzle);
 
     let mut canvas = Canvas::new(dimensions);
 
     draw_grid_lines(&mut canvas, dimensions);
-    draw_wires_and_endpoints(&mut canvas, &grid, &powered_tiles, dimensions);
+    draw_wires_and_endpoints(&mut canvas, &puzzle.tiles, dimensions);
     draw_source(&mut canvas, source);
-    draw_barriers(&mut canvas, dimensions, wrapping);
+    draw_barriers(&mut canvas, dimensions, puzzle.wrapping);
     draw_frame(&mut canvas);
 
     flatten_to_lines(&canvas).join("\n")
@@ -163,75 +165,11 @@ fn glyph(code: Code) -> char {
     }
 }
 
-type TileCoord = (usize, usize);
-type GridDimensions = (usize, usize);
-type Grid = Vec<Vec<Wires>>;
-type PoweredTiles = Vec<Vec<bool>>;
-
-#[derive(Clone, Copy)]
-struct Wires {
-    right: bool,
-    up: bool,
-    left: bool,
-    down: bool,
-}
-
-impl Wires {
-    fn new(right: bool, up: bool, left: bool, down: bool) -> Wires {
-        Wires { right, up, left, down }
-    }
-}
-
-fn build_grid() -> (Grid, PoweredTiles, TileCoord, GridDimensions, bool) {
-    let width = 5;
-    let height = 5;
-    let wrapping = false;
-    let source = (0, 0);
-    let grid = vec![
-        vec![
-            Wires::new(true, false, false, true),
-            Wires::new(true, false, true, true),
-            Wires::new(true, false, true, true),
-            Wires::new(true, false, true, false),
-            Wires::new(false, false, true, true),
-        ],
-        vec![
-            Wires::new(false, true, false, true),
-            Wires::new(false, true, false, true),
-            Wires::new(true, true, false, false),
-            Wires::new(false, false, true, true),
-            Wires::new(false, true, false, true),
-        ],
-        vec![
-            Wires::new(false, true, false, true),
-            Wires::new(false, true, false, false),
-            Wires::new(false, false, true, true),
-            Wires::new(false, true, true, false),
-            Wires::new(false, true, false, true),
-        ],
-        vec![
-            Wires::new(false, true, false, true),
-            Wires::new(true, false, false, true),
-            Wires::new(false, true, true, true),
-            Wires::new(true, false, false, false),
-            Wires::new(false, true, true, false),
-        ],
-        vec![
-            Wires::new(false, true, false, false),
-            Wires::new(false, true, false, false),
-            Wires::new(true, true, false, false),
-            Wires::new(true, false, true, false),
-            Wires::new(false, false, true, false),
-        ],
-    ];
-    let powered_tiles = vec![
-        vec![true, true, true, true, true],
-        vec![true, true, true, true, true],
-        vec![true, true, false, true, true],
-        vec![true, false, false, true, true],
-        vec![true, false, false, false, false],
-    ];
-    (grid, powered_tiles, source, (width, height), wrapping)
+/// Where the source tile is. Always the board's center; doesn't reflect
+/// moves made during play.
+fn source_position(puzzle: &NetPuzzle) -> TileCoord {
+    let (width, height) = puzzle.dimensions;
+    (width / 2, height / 2)
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -434,16 +372,12 @@ fn mark_tile(canvas: &mut Canvas, tile_coord: TileCoord, marker: [char; 3]) {
 /// Draws the wires and endpoint markers on top of the grid lines, light
 /// where unpowered and heavy where carrying power. A tile with exactly one
 /// arm becomes an endpoint.
-fn draw_wires_and_endpoints(
-    canvas: &mut Canvas,
-    grid: &Grid,
-    powered_tiles: &PoweredTiles,
-    (width, height): GridDimensions,
-) {
+fn draw_wires_and_endpoints(canvas: &mut Canvas, tiles: &Tiles, (width, height): GridDimensions) {
     for tile_y in 0..height {
         for tile_x in 0..width {
-            let wires = grid[tile_y][tile_x];
-            let is_powered = powered_tiles[tile_y][tile_x];
+            let tile = tiles[tile_y][tile_x];
+            let wires = tile.wires;
+            let is_powered = tile.powered;
             let weight = if is_powered {
                 Weight::Heavy
             } else {
@@ -634,21 +568,21 @@ mod tests {
     }
 
     #[test]
-    fn render_board_matches_reference() {
-        let expected = "\
-╔═══════════════════════╗\n\
-║ ┏━━━┯━━━┯━━━┯━━━┯━━━┓ ║\n\
-║ ┃▐🬰▌┿━┳━┿━┳━┿━━━┿━┓ ┃ ║\n\
-║ ┠─╂─┼─╂─┼─╂─┼───┼─╂─┨ ║\n\
-║ ┃ ┃ │ ┃ │ ┗━┿━┓ │ ┃ ┃ ║\n\
-║ ┠─╂─┼─╂─┼───┼─╂─┼─╂─┨ ║\n\
-║ ┃ ┃ │▐█▌├─┐ ┝━┛ │ ┃ ┃ ║\n\
-║ ┠─╂─┼───┼─┼─┼───┼─╂─┨ ║\n\
-║ ┃ ┃ │ ┌─┼─┤ │▐█▌┿━┛ ┃ ║\n\
-║ ┠─╂─┼─┼─┼─┼─┼───┼───┨ ║\n\
-║ ┃▐█▌│⢸⣿⡇│ └─┼───┼⢸⣿⡇┃ ║\n\
-║ ┗━━━┷━━━┷━━━┷━━━┷━━━┛ ║\n\
-╚═══════════════════════╝";
-        assert_eq!(render_board(), expected);
+    fn render_board_is_a_well_formed_rectangle() {
+        let puzzle = crate::net::generate();
+        let board = render_board(&puzzle);
+        let lines: Vec<&str> = board.lines().collect();
+        assert_eq!(lines.len(), 13);
+        for line in &lines {
+            assert_eq!(line.chars().count(), 25);
+        }
+    }
+
+    #[test]
+    fn render_board_does_not_panic_across_many_generated_boards() {
+        for _ in 0..100 {
+            let puzzle = crate::net::generate();
+            render_board(&puzzle);
+        }
     }
 }

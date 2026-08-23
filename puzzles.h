@@ -828,6 +828,16 @@ struct drawing_api {
     void (*draw_thick_line)(drawing *dr, float thickness,
 			    float x1, float y1, float x2, float y2,
 			    int colour);
+#ifdef EXPOSE_GAME_STATE
+    /*
+     * The rest of this API only conveys drawing primitives, not the
+     * underlying game data. This field is a direct accessor for front
+     * ends that need the data itself.
+     */
+    void (*emit_state)(drawing *dr, const game_state *state,
+		       const unsigned char *active, const unsigned char *tiles,
+		       bool wrapping, int width, int height);
+#endif
 };
 
 /*

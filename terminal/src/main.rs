@@ -1,5 +1,8 @@
+mod ffi;
+mod net;
 mod render;
 
 fn main() {
-    println!("{}", render::render_board());
+    let puzzle = net::generate();
+    println!("{}", render::render_board(&puzzle));
 }
