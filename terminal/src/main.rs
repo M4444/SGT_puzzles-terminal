@@ -4,5 +4,6 @@ mod render;
 
 fn main() {
     let puzzle = net::generate();
-    println!("{}", render::render_board(&puzzle));
+    let cursor_style = render::CursorStyle::default();
+    println!("{}", render::render_board(&puzzle, cursor_style));
 }

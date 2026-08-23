@@ -1,13 +1,13 @@
 //! Renders a Net board as a box-drawing string for the terminal.
 //!
 //! `render_board()` draws a given `NetPuzzle` onto a `Canvas` in phases
-//! (grid lines, wires and endpoints, source, barriers, frame), then
-//! flattens the result to text.
+//! (grid lines, wires and endpoints, source, barriers, cursor, frame),
+//! then flattens the result to text.
 
-use crate::net::{GridDimensions, NetPuzzle, TileCoord, Tiles};
+use crate::net::{Cursor, GridDimensions, NetPuzzle, TileCoord, Tiles};
 use std::cmp::max;
 
-pub fn render_board(puzzle: &NetPuzzle) -> String {
+pub fn render_board(puzzle: &NetPuzzle, cursor_style: CursorStyle) -> String {
     let dimensions = puzzle.dimensions;
     let source = source_position(puzzle);
 
@@ -17,6 +17,7 @@ pub fn render_board(puzzle: &NetPuzzle) -> String {
     draw_wires_and_endpoints(&mut canvas, &puzzle.tiles, dimensions);
     draw_source(&mut canvas, source);
     draw_barriers(&mut canvas, dimensions, puzzle.wrapping);
+    draw_cursor(&mut canvas, puzzle.cursor, cursor_style);
     draw_frame(&mut canvas);
 
     flatten_to_lines(&canvas).join("\n")
@@ -220,17 +221,20 @@ fn tile_offset_to_coord((tile_x, tile_y): TileCoord, (offset_x, offset_y): Offse
 
 // Helper functions name specific coordinates within a tile's footprint:
 //
-//             top_mid     a = center_left
-//                │        b = center_mid
-//                ▼        c = center_right
-// top_left ───►┌───┐
-// left_side ──►│abc│
-//              └───┘
+//               top_mid    a = center_left
+//                  │       b = center_mid
+//                  ▼       c = center_right
+// top_left ─────►┌───┐◄─── top_right
+// left_side ────►│abc│
+// bottom_left ──►└───┘◄─── bottom_right
 fn top_left(tile_coord: TileCoord) -> Coord {
     tile_offset_to_coord(tile_coord, (0, 0))
 }
 fn top_mid(tile_coord: TileCoord) -> Coord {
     tile_offset_to_coord(tile_coord, (2, 0))
+}
+fn top_right(tile_coord: TileCoord) -> Coord {
+    tile_offset_to_coord(tile_coord, (4, 0))
 }
 fn left_side(tile_coord: TileCoord) -> Coord {
     tile_offset_to_coord(tile_coord, (0, 1))
@@ -243,6 +247,12 @@ fn center_mid(tile_coord: TileCoord) -> Coord {
 }
 fn center_right(tile_coord: TileCoord) -> Coord {
     tile_offset_to_coord(tile_coord, (3, 1))
+}
+fn bottom_left(tile_coord: TileCoord) -> Coord {
+    tile_offset_to_coord(tile_coord, (0, 2))
+}
+fn bottom_right(tile_coord: TileCoord) -> Coord {
+    tile_offset_to_coord(tile_coord, (4, 2))
 }
 
 /// One screen coordinate: either an accumulated `Code` segment (resolved to
@@ -257,10 +267,13 @@ enum Cell {
 
 /// A dense grid of `Cell`, one per screen coordinate, initialized to a
 /// blank segment (`BLANK`). Sized from the tile-grid dimensions passed to
-/// `new()`, not any fixed constant. A real board's size is only known at
-/// runtime. Also stores the frame's bounds.
+/// `new()`, not any fixed constant. Also stores which positions render in
+/// reverse video, and the frame's bounds.
 struct Canvas {
     cells: Vec<Vec<Cell>>,
+    /// Which positions render in reverse video, independent of `cells`'
+    /// own content.
+    reversed: Vec<Vec<bool>>,
     frame_left: usize,
     frame_top: usize,
     frame_right: usize,
@@ -275,6 +288,7 @@ impl Canvas {
         let canvas_height = board_height + 2 * FRAME_MARGIN_Y + 2 + 2 * CANVAS_MARGIN_Y;
         Canvas {
             cells: vec![vec![Cell::Segment(BLANK); canvas_width]; canvas_height],
+            reversed: vec![vec![false; canvas_width]; canvas_height],
             frame_left: CANVAS_MARGIN_X,
             frame_top: CANVAS_MARGIN_Y,
             frame_right: canvas_width - 1 - CANVAS_MARGIN_X,
@@ -309,6 +323,16 @@ impl Canvas {
             Cell::Segment(code) => glyph(code),
             Cell::Marker(c) => c,
         }
+    }
+
+    fn mark_reversed(&mut self, coord: impl Into<Coord>) {
+        let coord = coord.into();
+        self.reversed[coord.y][coord.x] = true;
+    }
+
+    fn is_reversed(&self, coord: impl Into<Coord>) -> bool {
+        let coord = coord.into();
+        self.reversed[coord.y][coord.x]
     }
 }
 
@@ -421,6 +445,48 @@ fn draw_source(canvas: &mut Canvas, source: TileCoord) {
     mark_tile(canvas, source, SOURCE_MARKER);
 }
 
+/// How the keyboard cursor's tile is visually marked.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub enum CursorStyle {
+    /// A heavy-weight box drawn around the tile's own border.
+    Outline,
+    /// Reverse video over just the tile's content cells.
+    ReverseTileCenter,
+    /// Reverse video over the entire tile: all four of its borders and
+    /// its content.
+    #[default]
+    ReverseTileFull,
+}
+
+/// Highlights the keyboard cursor's tile, if it's currently shown.
+fn draw_cursor(canvas: &mut Canvas, cursor: Cursor, style: CursorStyle) {
+    if !cursor.visible {
+        return;
+    }
+    match style {
+        CursorStyle::Outline => {
+            let tile = cursor.position;
+            draw_line(canvas, top_left(tile), top_right(tile), Weight::Heavy);
+            draw_line(canvas, bottom_left(tile), bottom_right(tile), Weight::Heavy);
+            draw_line(canvas, top_left(tile), bottom_left(tile), Weight::Heavy);
+            draw_line(canvas, top_right(tile), bottom_right(tile), Weight::Heavy);
+        }
+        CursorStyle::ReverseTileCenter => {
+            canvas.mark_reversed(center_left(cursor.position));
+            canvas.mark_reversed(center_mid(cursor.position));
+            canvas.mark_reversed(center_right(cursor.position));
+        }
+        CursorStyle::ReverseTileFull => {
+            for offset_y in 0..=2 {
+                for offset_x in 0..=4 {
+                    canvas
+                        .mark_reversed(tile_offset_to_coord(cursor.position, (offset_x, offset_y)));
+                }
+            }
+        }
+    }
+}
+
 /// Draws barrier walls, fixed obstacles blocking a wire connection, in
 /// heavy weight across the border they occupy. A wrapping grid has no
 /// outer boundary, so this draws nothing; otherwise it forms the full
@@ -457,7 +523,12 @@ fn flatten_to_lines(canvas: &Canvas) -> Vec<String> {
     for y in 0..canvas.height() {
         let mut line = String::with_capacity(canvas.width());
         for x in 0..canvas.width() {
-            line.push(canvas.char_at((x, y)));
+            let c = canvas.char_at((x, y));
+            if canvas.is_reversed((x, y)) {
+                line.push_str(&format!("\x1b[7m{c}\x1b[27m"));
+            } else {
+                line.push(c);
+            }
         }
         lines.push(line);
     }
@@ -570,7 +641,7 @@ mod tests {
     #[test]
     fn render_board_is_a_well_formed_rectangle() {
         let puzzle = crate::net::generate();
-        let board = render_board(&puzzle);
+        let board = render_board(&puzzle, CursorStyle::Outline);
         let lines: Vec<&str> = board.lines().collect();
         assert_eq!(lines.len(), 13);
         for line in &lines {
@@ -582,7 +653,65 @@ mod tests {
     fn render_board_does_not_panic_across_many_generated_boards() {
         for _ in 0..100 {
             let puzzle = crate::net::generate();
-            render_board(&puzzle);
+            render_board(&puzzle, CursorStyle::Outline);
         }
+    }
+
+    #[test]
+    fn draw_cursor_outline_boxes_the_tile() {
+        let mut canvas = Canvas::new((3, 3));
+        draw_grid_lines(&mut canvas, (3, 3));
+        let cursor = Cursor { position: (1, 1), visible: true };
+        draw_cursor(&mut canvas, cursor, CursorStyle::Outline);
+
+        assert_eq!(canvas.char_at(top_left((1, 1))), '╆');
+        assert_eq!(canvas.char_at(top_left((2, 1))), '╅');
+        assert_eq!(canvas.char_at(top_left((1, 2))), '╄');
+        assert_eq!(canvas.char_at(top_left((2, 2))), '╃');
+        assert_eq!(canvas.char_at(left_side((1, 1))), '┃');
+    }
+
+    #[test]
+    fn draw_cursor_reverse_tile_center_only_marks_content() {
+        let mut canvas = Canvas::new((3, 3));
+        let cursor = Cursor { position: (1, 1), visible: true };
+        draw_cursor(&mut canvas, cursor, CursorStyle::ReverseTileCenter);
+
+        assert!(canvas.is_reversed(center_left((1, 1))));
+        assert!(canvas.is_reversed(center_mid((1, 1))));
+        assert!(canvas.is_reversed(center_right((1, 1))));
+        assert!(!canvas.is_reversed(top_left((1, 1))));
+    }
+
+    #[test]
+    fn draw_cursor_reverse_tile_full_includes_shared_edge() {
+        let mut canvas = Canvas::new((3, 3));
+        let cursor = Cursor { position: (1, 1), visible: true };
+        draw_cursor(&mut canvas, cursor, CursorStyle::ReverseTileFull);
+
+        assert!(canvas.is_reversed(top_left((1, 1))));
+        assert!(canvas.is_reversed(center_mid((1, 1))));
+        assert!(canvas.is_reversed(top_left((2, 1))));
+        assert!(canvas.is_reversed(top_left((1, 2))));
+    }
+
+    #[test]
+    fn flatten_wraps_reversed_cells_in_escape_codes() {
+        let mut canvas = Canvas::new((1, 1));
+        canvas.mark_reversed((0, 0));
+
+        let lines = flatten_to_lines(&canvas);
+        assert!(lines[0].starts_with("\x1b[7m"));
+        assert!(lines[0].contains("\x1b[27m"));
+    }
+
+    #[test]
+    fn draw_cursor_draws_nothing_when_not_visible() {
+        let mut canvas = Canvas::new((3, 3));
+        let cursor = Cursor { position: (1, 1), visible: false };
+        draw_cursor(&mut canvas, cursor, CursorStyle::default());
+
+        assert!(!canvas.is_reversed(top_left((1, 1))));
+        assert!(!canvas.is_reversed(center_mid((1, 1))));
     }
 }

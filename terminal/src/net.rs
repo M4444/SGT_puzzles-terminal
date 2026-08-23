@@ -48,12 +48,20 @@ pub struct Tile {
     pub powered: bool,
 }
 
+/// The keyboard cursor's position and whether it's currently shown.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Cursor {
+    pub position: TileCoord,
+    pub visible: bool,
+}
+
 /// A Net puzzle, indexed `[row][column]`.
 #[derive(Debug, PartialEq, Eq)]
 pub struct NetPuzzle {
     pub dimensions: GridDimensions,
     pub wrapping: bool,
     pub tiles: Tiles,
+    pub cursor: Cursor,
 }
 
 /// Where `emit_state` (called during `Midend::redraw`) deposits the
@@ -95,6 +103,10 @@ extern "C" fn rust_emit_state(
         dimensions: (width, height),
         wrapping,
         tiles: tiles.chunks(width).map(|row| row.to_vec()).collect(),
+        cursor: Cursor {
+            position: (width / 2, height / 2),
+            visible: true,
+        },
     });
 }
 
