@@ -159,39 +159,6 @@ fn glyph(code: Code) -> char {
         [Weight::Double, Weight::Double, Weight::Double, Weight::None] => '╩',
         [Weight::Double, Weight::Double, Weight::Double, Weight::Double] => '╬',
 
-        // There's no Unicode glyph that mixes `Weight::Double` and `Weight::Heavy`.
-        // For those cases we will just use `Weight::Light` instead of `Weight::Heavy`.
-        [Weight::None, Weight::None, Weight::Heavy, Weight::Double] => '╖',
-        [Weight::None, Weight::None, Weight::Double, Weight::Heavy] => '╕',
-        [Weight::None, Weight::Light, Weight::Double, Weight::Heavy] => '╡',
-        [Weight::None, Weight::Heavy, Weight::Double, Weight::None] => '╛',
-        [Weight::None, Weight::Heavy, Weight::Double, Weight::Light] => '╡',
-        [Weight::None, Weight::Heavy, Weight::Double, Weight::Heavy] => '╡',
-        [Weight::None, Weight::Double, Weight::Heavy, Weight::None] => '╜',
-        [Weight::None, Weight::Double, Weight::Heavy, Weight::Double] => '╢',
-        [Weight::Light, Weight::None, Weight::Heavy, Weight::Double] => '╥',
-        [Weight::Light, Weight::Double, Weight::Heavy, Weight::None] => '╨',
-        [Weight::Light, Weight::Double, Weight::Heavy, Weight::Double] => '╫',
-        [Weight::Heavy, Weight::None, Weight::None, Weight::Double] => '╓',
-        [Weight::Heavy, Weight::None, Weight::Light, Weight::Double] => '╥',
-        [Weight::Heavy, Weight::None, Weight::Heavy, Weight::Double] => '╥',
-        [Weight::Heavy, Weight::Double, Weight::None, Weight::None] => '╙',
-        [Weight::Heavy, Weight::Double, Weight::None, Weight::Double] => '╟',
-        [Weight::Heavy, Weight::Double, Weight::Light, Weight::None] => '╨',
-        [Weight::Heavy, Weight::Double, Weight::Light, Weight::Double] => '╫',
-        [Weight::Heavy, Weight::Double, Weight::Heavy, Weight::None] => '╨',
-        [Weight::Heavy, Weight::Double, Weight::Heavy, Weight::Double] => '╫',
-        [Weight::Double, Weight::None, Weight::None, Weight::Heavy] => '╒',
-        [Weight::Double, Weight::None, Weight::Double, Weight::Heavy] => '╤',
-        [Weight::Double, Weight::Light, Weight::None, Weight::Heavy] => '╞',
-        [Weight::Double, Weight::Light, Weight::Double, Weight::Heavy] => '╪',
-        [Weight::Double, Weight::Heavy, Weight::None, Weight::None] => '╘',
-        [Weight::Double, Weight::Heavy, Weight::None, Weight::Light] => '╞',
-        [Weight::Double, Weight::Heavy, Weight::None, Weight::Heavy] => '╞',
-        [Weight::Double, Weight::Heavy, Weight::Double, Weight::None] => '╧',
-        [Weight::Double, Weight::Heavy, Weight::Double, Weight::Light] => '╪',
-        [Weight::Double, Weight::Heavy, Weight::Double, Weight::Heavy] => '╪',
-
         other => panic!("no box-drawing character for weight combination {:?}", other),
     }
 }
@@ -521,18 +488,20 @@ fn draw_source(canvas: &mut Canvas, source: TileCoord) {
 }
 
 /// Draws barrier walls, fixed obstacles blocking a wire connection, in
-/// double weight across the border they occupy. A wrapping grid has no
+/// heavy weight across the border they occupy. A wrapping grid has no
 /// outer boundary, so this draws nothing; otherwise it forms the full
 /// outer boundary ring.
 fn draw_barriers(canvas: &mut Canvas, (width, height): GridDimensions, wrapping: bool) {
     if wrapping {
         return;
     }
-    draw_line(canvas, top_left((0, 0)), top_left((width, 0)), Weight::Double);
-    draw_line(canvas, top_left((0, height)), top_left((width, height)), Weight::Double);
-    draw_line(canvas, top_left((0, 0)), top_left((0, height)), Weight::Double);
-    draw_line(canvas, top_left((width, 0)), top_left((width, height)), Weight::Double);
+    draw_line(canvas, top_left((0, 0)), top_left((width, 0)), Weight::Heavy);
+    draw_line(canvas, top_left((0, height)), top_left((width, height)), Weight::Heavy);
+    draw_line(canvas, top_left((0, 0)), top_left((0, height)), Weight::Heavy);
+    draw_line(canvas, top_left((width, 0)), top_left((width, height)), Weight::Heavy);
 }
+
+const FRAME_WEIGHT: Weight = Weight::Double;
 
 /// Draws the outer presentation frame, offset from the grid lines by
 /// FRAME_MARGIN_X/FRAME_MARGIN_Y and from the canvas edge by
@@ -542,10 +511,10 @@ fn draw_frame(canvas: &mut Canvas) {
     let top = canvas.frame_top;
     let right = canvas.frame_right;
     let bottom = canvas.frame_bottom;
-    draw_line(canvas, (left, top), (right, top), Weight::Light);
-    draw_line(canvas, (left, bottom), (right, bottom), Weight::Light);
-    draw_line(canvas, (left, top), (left, bottom), Weight::Light);
-    draw_line(canvas, (right, top), (right, bottom), Weight::Light);
+    draw_line(canvas, (left, top), (right, top), FRAME_WEIGHT);
+    draw_line(canvas, (left, bottom), (right, bottom), FRAME_WEIGHT);
+    draw_line(canvas, (left, top), (left, bottom), FRAME_WEIGHT);
+    draw_line(canvas, (right, top), (right, bottom), FRAME_WEIGHT);
 }
 
 /// Flattens the drawn canvas into one line of text per screen row.
@@ -590,14 +559,9 @@ mod tests {
     }
 
     #[test]
-    fn heavy_downgrades_to_light() {
-        // There's no Unicode glyph that mixes `Weight::Double` and `Weight::Heavy`,
-        // so in that case `Weight::Heavy` turns into `Weight::Light`.
-        let glyph_with_heavy =
-            glyph([Weight::Heavy, Weight::Double, Weight::Heavy, Weight::Double]);
-        let glyph_with_light =
-            glyph([Weight::Light, Weight::Double, Weight::Light, Weight::Double]);
-        assert_eq!(glyph_with_heavy, glyph_with_light);
+    #[should_panic(expected = "no box-drawing character for weight combination")]
+    fn heavy_and_double_has_no_glyph() {
+        glyph([Weight::Heavy, Weight::Double, Weight::Heavy, Weight::Double]);
     }
 
     #[test]
@@ -672,19 +636,19 @@ mod tests {
     #[test]
     fn render_board_matches_reference() {
         let expected = "\
-┌───────────────────────┐\n\
-│ ╔═══╤═══╤═══╤═══╤═══╗ │\n\
-│ ║▐🬰▌┿━┳━┿━┳━┿━━━┿━┓ ║ │\n\
-│ ╟─╂─┼─╂─┼─╂─┼───┼─╂─╢ │\n\
-│ ║ ┃ │ ┃ │ ┗━┿━┓ │ ┃ ║ │\n\
-│ ╟─╂─┼─╂─┼───┼─╂─┼─╂─╢ │\n\
-│ ║ ┃ │▐█▌├─┐ ┝━┛ │ ┃ ║ │\n\
-│ ╟─╂─┼───┼─┼─┼───┼─╂─╢ │\n\
-│ ║ ┃ │ ┌─┼─┤ │▐█▌┿━┛ ║ │\n\
-│ ╟─╂─┼─┼─┼─┼─┼───┼───╢ │\n\
-│ ║▐█▌│⢸⣿⡇│ └─┼───┼⢸⣿⡇║ │\n\
-│ ╚═══╧═══╧═══╧═══╧═══╝ │\n\
-└───────────────────────┘";
+╔═══════════════════════╗\n\
+║ ┏━━━┯━━━┯━━━┯━━━┯━━━┓ ║\n\
+║ ┃▐🬰▌┿━┳━┿━┳━┿━━━┿━┓ ┃ ║\n\
+║ ┠─╂─┼─╂─┼─╂─┼───┼─╂─┨ ║\n\
+║ ┃ ┃ │ ┃ │ ┗━┿━┓ │ ┃ ┃ ║\n\
+║ ┠─╂─┼─╂─┼───┼─╂─┼─╂─┨ ║\n\
+║ ┃ ┃ │▐█▌├─┐ ┝━┛ │ ┃ ┃ ║\n\
+║ ┠─╂─┼───┼─┼─┼───┼─╂─┨ ║\n\
+║ ┃ ┃ │ ┌─┼─┤ │▐█▌┿━┛ ┃ ║\n\
+║ ┠─╂─┼─┼─┼─┼─┼───┼───┨ ║\n\
+║ ┃▐█▌│⢸⣿⡇│ └─┼───┼⢸⣿⡇┃ ║\n\
+║ ┗━━━┷━━━┷━━━┷━━━┷━━━┛ ║\n\
+╚═══════════════════════╝";
         assert_eq!(render_board(), expected);
     }
 }
