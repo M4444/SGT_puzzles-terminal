@@ -20,15 +20,19 @@ pub fn render_board() -> String {
     flatten_to_lines(&canvas).join("\n")
 }
 
-const NONE: u8 = 0;
-const LIGHT: u8 = 1;
-const HEAVY: u8 = 2;
-const DOUBLE: u8 = 3;
+/// How strongly a line is drawn.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+enum Weight {
+    None,
+    Light,
+    Heavy,
+    Double,
+}
 
 /// Per-arm line weight, order (right, up, left, down).
-type Code = [u8; 4];
+type Code = [Weight; 4];
 
-const BLANK: Code = [NONE, NONE, NONE, NONE];
+const BLANK: Code = [Weight::None; 4];
 
 /// Elementwise max of two weight codes. The stronger arm wins wherever
 /// two draws overlap.
@@ -44,149 +48,149 @@ fn combine(a: Code, b: Code) -> Code {
 /// Returns the Unicode glyph based on the arm-weight combination.
 fn glyph(code: Code) -> char {
     match code {
-        [0, 0, 0, 0] => ' ',
-        [0, 0, 0, 1] => '╷',
-        [0, 0, 0, 2] => '╻',
-        [0, 0, 1, 0] => '╴',
-        [0, 0, 1, 1] => '┐',
-        [0, 0, 1, 2] => '┒',
-        [0, 0, 1, 3] => '╖',
-        [0, 0, 2, 0] => '╸',
-        [0, 0, 2, 1] => '┑',
-        [0, 0, 2, 2] => '┓',
-        [0, 0, 3, 1] => '╕',
-        [0, 0, 3, 3] => '╗',
-        [0, 1, 0, 0] => '╵',
-        [0, 1, 0, 1] => '│',
-        [0, 1, 0, 2] => '╽',
-        [0, 1, 1, 0] => '┘',
-        [0, 1, 1, 1] => '┤',
-        [0, 1, 1, 2] => '┧',
-        [0, 1, 2, 0] => '┙',
-        [0, 1, 2, 1] => '┥',
-        [0, 1, 2, 2] => '┪',
-        [0, 1, 3, 0] => '╛',
-        [0, 1, 3, 1] => '╡',
-        [0, 2, 0, 0] => '╹',
-        [0, 2, 0, 1] => '╿',
-        [0, 2, 0, 2] => '┃',
-        [0, 2, 1, 0] => '┚',
-        [0, 2, 1, 1] => '┦',
-        [0, 2, 1, 2] => '┨',
-        [0, 2, 2, 0] => '┛',
-        [0, 2, 2, 1] => '┩',
-        [0, 2, 2, 2] => '┫',
-        [0, 3, 0, 3] => '║',
-        [0, 3, 1, 0] => '╜',
-        [0, 3, 1, 3] => '╢',
-        [0, 3, 3, 0] => '╝',
-        [0, 3, 3, 3] => '╣',
-        [1, 0, 0, 0] => '╶',
-        [1, 0, 0, 1] => '┌',
-        [1, 0, 0, 2] => '┎',
-        [1, 0, 0, 3] => '╓',
-        [1, 0, 1, 0] => '─',
-        [1, 0, 1, 1] => '┬',
-        [1, 0, 1, 2] => '┰',
-        [1, 0, 1, 3] => '╥',
-        [1, 0, 2, 0] => '╾',
-        [1, 0, 2, 1] => '┭',
-        [1, 0, 2, 2] => '┱',
-        [1, 1, 0, 0] => '└',
-        [1, 1, 0, 1] => '├',
-        [1, 1, 0, 2] => '┟',
-        [1, 1, 1, 0] => '┴',
-        [1, 1, 1, 1] => '┼',
-        [1, 1, 1, 2] => '╁',
-        [1, 1, 2, 0] => '┵',
-        [1, 1, 2, 1] => '┽',
-        [1, 1, 2, 2] => '╅',
-        [1, 2, 0, 0] => '┖',
-        [1, 2, 0, 1] => '┞',
-        [1, 2, 0, 2] => '┠',
-        [1, 2, 1, 0] => '┸',
-        [1, 2, 1, 1] => '╀',
-        [1, 2, 1, 2] => '╂',
-        [1, 2, 2, 0] => '┹',
-        [1, 2, 2, 1] => '╃',
-        [1, 2, 2, 2] => '╉',
-        [1, 3, 0, 0] => '╙',
-        [1, 3, 0, 3] => '╟',
-        [1, 3, 1, 0] => '╨',
-        [1, 3, 1, 3] => '╫',
-        [2, 0, 0, 0] => '╺',
-        [2, 0, 0, 1] => '┍',
-        [2, 0, 0, 2] => '┏',
-        [2, 0, 1, 0] => '╼',
-        [2, 0, 1, 1] => '┮',
-        [2, 0, 1, 2] => '┲',
-        [2, 0, 2, 0] => '━',
-        [2, 0, 2, 1] => '┯',
-        [2, 0, 2, 2] => '┳',
-        [2, 1, 0, 0] => '┕',
-        [2, 1, 0, 1] => '┝',
-        [2, 1, 0, 2] => '┢',
-        [2, 1, 1, 0] => '┶',
-        [2, 1, 1, 1] => '┾',
-        [2, 1, 1, 2] => '╆',
-        [2, 1, 2, 0] => '┷',
-        [2, 1, 2, 1] => '┿',
-        [2, 1, 2, 2] => '╈',
-        [2, 2, 0, 0] => '┗',
-        [2, 2, 0, 1] => '┡',
-        [2, 2, 0, 2] => '┣',
-        [2, 2, 1, 0] => '┺',
-        [2, 2, 1, 1] => '╄',
-        [2, 2, 1, 2] => '╊',
-        [2, 2, 2, 0] => '┻',
-        [2, 2, 2, 1] => '╇',
-        [2, 2, 2, 2] => '╋',
-        [3, 0, 0, 1] => '╒',
-        [3, 0, 0, 3] => '╔',
-        [3, 0, 3, 0] => '═',
-        [3, 0, 3, 1] => '╤',
-        [3, 0, 3, 3] => '╦',
-        [3, 1, 0, 0] => '╘',
-        [3, 1, 0, 1] => '╞',
-        [3, 1, 3, 0] => '╧',
-        [3, 1, 3, 1] => '╪',
-        [3, 3, 0, 0] => '╚',
-        [3, 3, 0, 3] => '╠',
-        [3, 3, 3, 0] => '╩',
-        [3, 3, 3, 3] => '╬',
+        [Weight::None, Weight::None, Weight::None, Weight::None] => ' ',
+        [Weight::None, Weight::None, Weight::None, Weight::Light] => '╷',
+        [Weight::None, Weight::None, Weight::None, Weight::Heavy] => '╻',
+        [Weight::None, Weight::None, Weight::Light, Weight::None] => '╴',
+        [Weight::None, Weight::None, Weight::Light, Weight::Light] => '┐',
+        [Weight::None, Weight::None, Weight::Light, Weight::Heavy] => '┒',
+        [Weight::None, Weight::None, Weight::Light, Weight::Double] => '╖',
+        [Weight::None, Weight::None, Weight::Heavy, Weight::None] => '╸',
+        [Weight::None, Weight::None, Weight::Heavy, Weight::Light] => '┑',
+        [Weight::None, Weight::None, Weight::Heavy, Weight::Heavy] => '┓',
+        [Weight::None, Weight::None, Weight::Double, Weight::Light] => '╕',
+        [Weight::None, Weight::None, Weight::Double, Weight::Double] => '╗',
+        [Weight::None, Weight::Light, Weight::None, Weight::None] => '╵',
+        [Weight::None, Weight::Light, Weight::None, Weight::Light] => '│',
+        [Weight::None, Weight::Light, Weight::None, Weight::Heavy] => '╽',
+        [Weight::None, Weight::Light, Weight::Light, Weight::None] => '┘',
+        [Weight::None, Weight::Light, Weight::Light, Weight::Light] => '┤',
+        [Weight::None, Weight::Light, Weight::Light, Weight::Heavy] => '┧',
+        [Weight::None, Weight::Light, Weight::Heavy, Weight::None] => '┙',
+        [Weight::None, Weight::Light, Weight::Heavy, Weight::Light] => '┥',
+        [Weight::None, Weight::Light, Weight::Heavy, Weight::Heavy] => '┪',
+        [Weight::None, Weight::Light, Weight::Double, Weight::None] => '╛',
+        [Weight::None, Weight::Light, Weight::Double, Weight::Light] => '╡',
+        [Weight::None, Weight::Heavy, Weight::None, Weight::None] => '╹',
+        [Weight::None, Weight::Heavy, Weight::None, Weight::Light] => '╿',
+        [Weight::None, Weight::Heavy, Weight::None, Weight::Heavy] => '┃',
+        [Weight::None, Weight::Heavy, Weight::Light, Weight::None] => '┚',
+        [Weight::None, Weight::Heavy, Weight::Light, Weight::Light] => '┦',
+        [Weight::None, Weight::Heavy, Weight::Light, Weight::Heavy] => '┨',
+        [Weight::None, Weight::Heavy, Weight::Heavy, Weight::None] => '┛',
+        [Weight::None, Weight::Heavy, Weight::Heavy, Weight::Light] => '┩',
+        [Weight::None, Weight::Heavy, Weight::Heavy, Weight::Heavy] => '┫',
+        [Weight::None, Weight::Double, Weight::None, Weight::Double] => '║',
+        [Weight::None, Weight::Double, Weight::Light, Weight::None] => '╜',
+        [Weight::None, Weight::Double, Weight::Light, Weight::Double] => '╢',
+        [Weight::None, Weight::Double, Weight::Double, Weight::None] => '╝',
+        [Weight::None, Weight::Double, Weight::Double, Weight::Double] => '╣',
+        [Weight::Light, Weight::None, Weight::None, Weight::None] => '╶',
+        [Weight::Light, Weight::None, Weight::None, Weight::Light] => '┌',
+        [Weight::Light, Weight::None, Weight::None, Weight::Heavy] => '┎',
+        [Weight::Light, Weight::None, Weight::None, Weight::Double] => '╓',
+        [Weight::Light, Weight::None, Weight::Light, Weight::None] => '─',
+        [Weight::Light, Weight::None, Weight::Light, Weight::Light] => '┬',
+        [Weight::Light, Weight::None, Weight::Light, Weight::Heavy] => '┰',
+        [Weight::Light, Weight::None, Weight::Light, Weight::Double] => '╥',
+        [Weight::Light, Weight::None, Weight::Heavy, Weight::None] => '╾',
+        [Weight::Light, Weight::None, Weight::Heavy, Weight::Light] => '┭',
+        [Weight::Light, Weight::None, Weight::Heavy, Weight::Heavy] => '┱',
+        [Weight::Light, Weight::Light, Weight::None, Weight::None] => '└',
+        [Weight::Light, Weight::Light, Weight::None, Weight::Light] => '├',
+        [Weight::Light, Weight::Light, Weight::None, Weight::Heavy] => '┟',
+        [Weight::Light, Weight::Light, Weight::Light, Weight::None] => '┴',
+        [Weight::Light, Weight::Light, Weight::Light, Weight::Light] => '┼',
+        [Weight::Light, Weight::Light, Weight::Light, Weight::Heavy] => '╁',
+        [Weight::Light, Weight::Light, Weight::Heavy, Weight::None] => '┵',
+        [Weight::Light, Weight::Light, Weight::Heavy, Weight::Light] => '┽',
+        [Weight::Light, Weight::Light, Weight::Heavy, Weight::Heavy] => '╅',
+        [Weight::Light, Weight::Heavy, Weight::None, Weight::None] => '┖',
+        [Weight::Light, Weight::Heavy, Weight::None, Weight::Light] => '┞',
+        [Weight::Light, Weight::Heavy, Weight::None, Weight::Heavy] => '┠',
+        [Weight::Light, Weight::Heavy, Weight::Light, Weight::None] => '┸',
+        [Weight::Light, Weight::Heavy, Weight::Light, Weight::Light] => '╀',
+        [Weight::Light, Weight::Heavy, Weight::Light, Weight::Heavy] => '╂',
+        [Weight::Light, Weight::Heavy, Weight::Heavy, Weight::None] => '┹',
+        [Weight::Light, Weight::Heavy, Weight::Heavy, Weight::Light] => '╃',
+        [Weight::Light, Weight::Heavy, Weight::Heavy, Weight::Heavy] => '╉',
+        [Weight::Light, Weight::Double, Weight::None, Weight::None] => '╙',
+        [Weight::Light, Weight::Double, Weight::None, Weight::Double] => '╟',
+        [Weight::Light, Weight::Double, Weight::Light, Weight::None] => '╨',
+        [Weight::Light, Weight::Double, Weight::Light, Weight::Double] => '╫',
+        [Weight::Heavy, Weight::None, Weight::None, Weight::None] => '╺',
+        [Weight::Heavy, Weight::None, Weight::None, Weight::Light] => '┍',
+        [Weight::Heavy, Weight::None, Weight::None, Weight::Heavy] => '┏',
+        [Weight::Heavy, Weight::None, Weight::Light, Weight::None] => '╼',
+        [Weight::Heavy, Weight::None, Weight::Light, Weight::Light] => '┮',
+        [Weight::Heavy, Weight::None, Weight::Light, Weight::Heavy] => '┲',
+        [Weight::Heavy, Weight::None, Weight::Heavy, Weight::None] => '━',
+        [Weight::Heavy, Weight::None, Weight::Heavy, Weight::Light] => '┯',
+        [Weight::Heavy, Weight::None, Weight::Heavy, Weight::Heavy] => '┳',
+        [Weight::Heavy, Weight::Light, Weight::None, Weight::None] => '┕',
+        [Weight::Heavy, Weight::Light, Weight::None, Weight::Light] => '┝',
+        [Weight::Heavy, Weight::Light, Weight::None, Weight::Heavy] => '┢',
+        [Weight::Heavy, Weight::Light, Weight::Light, Weight::None] => '┶',
+        [Weight::Heavy, Weight::Light, Weight::Light, Weight::Light] => '┾',
+        [Weight::Heavy, Weight::Light, Weight::Light, Weight::Heavy] => '╆',
+        [Weight::Heavy, Weight::Light, Weight::Heavy, Weight::None] => '┷',
+        [Weight::Heavy, Weight::Light, Weight::Heavy, Weight::Light] => '┿',
+        [Weight::Heavy, Weight::Light, Weight::Heavy, Weight::Heavy] => '╈',
+        [Weight::Heavy, Weight::Heavy, Weight::None, Weight::None] => '┗',
+        [Weight::Heavy, Weight::Heavy, Weight::None, Weight::Light] => '┡',
+        [Weight::Heavy, Weight::Heavy, Weight::None, Weight::Heavy] => '┣',
+        [Weight::Heavy, Weight::Heavy, Weight::Light, Weight::None] => '┺',
+        [Weight::Heavy, Weight::Heavy, Weight::Light, Weight::Light] => '╄',
+        [Weight::Heavy, Weight::Heavy, Weight::Light, Weight::Heavy] => '╊',
+        [Weight::Heavy, Weight::Heavy, Weight::Heavy, Weight::None] => '┻',
+        [Weight::Heavy, Weight::Heavy, Weight::Heavy, Weight::Light] => '╇',
+        [Weight::Heavy, Weight::Heavy, Weight::Heavy, Weight::Heavy] => '╋',
+        [Weight::Double, Weight::None, Weight::None, Weight::Light] => '╒',
+        [Weight::Double, Weight::None, Weight::None, Weight::Double] => '╔',
+        [Weight::Double, Weight::None, Weight::Double, Weight::None] => '═',
+        [Weight::Double, Weight::None, Weight::Double, Weight::Light] => '╤',
+        [Weight::Double, Weight::None, Weight::Double, Weight::Double] => '╦',
+        [Weight::Double, Weight::Light, Weight::None, Weight::None] => '╘',
+        [Weight::Double, Weight::Light, Weight::None, Weight::Light] => '╞',
+        [Weight::Double, Weight::Light, Weight::Double, Weight::None] => '╧',
+        [Weight::Double, Weight::Light, Weight::Double, Weight::Light] => '╪',
+        [Weight::Double, Weight::Double, Weight::None, Weight::None] => '╚',
+        [Weight::Double, Weight::Double, Weight::None, Weight::Double] => '╠',
+        [Weight::Double, Weight::Double, Weight::Double, Weight::None] => '╩',
+        [Weight::Double, Weight::Double, Weight::Double, Weight::Double] => '╬',
 
-        // There's no Unicode glyph that mixes DOUBLE and HEAVY.
-        // For those cases we will just use LIGHT instead of HEAVY.
-        [0, 0, 2, 3] => '╖',
-        [0, 0, 3, 2] => '╕',
-        [0, 1, 3, 2] => '╡',
-        [0, 2, 3, 0] => '╛',
-        [0, 2, 3, 1] => '╡',
-        [0, 2, 3, 2] => '╡',
-        [0, 3, 2, 0] => '╜',
-        [0, 3, 2, 3] => '╢',
-        [1, 0, 2, 3] => '╥',
-        [1, 3, 2, 0] => '╨',
-        [1, 3, 2, 3] => '╫',
-        [2, 0, 0, 3] => '╓',
-        [2, 0, 1, 3] => '╥',
-        [2, 0, 2, 3] => '╥',
-        [2, 3, 0, 0] => '╙',
-        [2, 3, 0, 3] => '╟',
-        [2, 3, 1, 0] => '╨',
-        [2, 3, 1, 3] => '╫',
-        [2, 3, 2, 0] => '╨',
-        [2, 3, 2, 3] => '╫',
-        [3, 0, 0, 2] => '╒',
-        [3, 0, 3, 2] => '╤',
-        [3, 1, 0, 2] => '╞',
-        [3, 1, 3, 2] => '╪',
-        [3, 2, 0, 0] => '╘',
-        [3, 2, 0, 1] => '╞',
-        [3, 2, 0, 2] => '╞',
-        [3, 2, 3, 0] => '╧',
-        [3, 2, 3, 1] => '╪',
-        [3, 2, 3, 2] => '╪',
+        // There's no Unicode glyph that mixes `Weight::Double` and `Weight::Heavy`.
+        // For those cases we will just use `Weight::Light` instead of `Weight::Heavy`.
+        [Weight::None, Weight::None, Weight::Heavy, Weight::Double] => '╖',
+        [Weight::None, Weight::None, Weight::Double, Weight::Heavy] => '╕',
+        [Weight::None, Weight::Light, Weight::Double, Weight::Heavy] => '╡',
+        [Weight::None, Weight::Heavy, Weight::Double, Weight::None] => '╛',
+        [Weight::None, Weight::Heavy, Weight::Double, Weight::Light] => '╡',
+        [Weight::None, Weight::Heavy, Weight::Double, Weight::Heavy] => '╡',
+        [Weight::None, Weight::Double, Weight::Heavy, Weight::None] => '╜',
+        [Weight::None, Weight::Double, Weight::Heavy, Weight::Double] => '╢',
+        [Weight::Light, Weight::None, Weight::Heavy, Weight::Double] => '╥',
+        [Weight::Light, Weight::Double, Weight::Heavy, Weight::None] => '╨',
+        [Weight::Light, Weight::Double, Weight::Heavy, Weight::Double] => '╫',
+        [Weight::Heavy, Weight::None, Weight::None, Weight::Double] => '╓',
+        [Weight::Heavy, Weight::None, Weight::Light, Weight::Double] => '╥',
+        [Weight::Heavy, Weight::None, Weight::Heavy, Weight::Double] => '╥',
+        [Weight::Heavy, Weight::Double, Weight::None, Weight::None] => '╙',
+        [Weight::Heavy, Weight::Double, Weight::None, Weight::Double] => '╟',
+        [Weight::Heavy, Weight::Double, Weight::Light, Weight::None] => '╨',
+        [Weight::Heavy, Weight::Double, Weight::Light, Weight::Double] => '╫',
+        [Weight::Heavy, Weight::Double, Weight::Heavy, Weight::None] => '╨',
+        [Weight::Heavy, Weight::Double, Weight::Heavy, Weight::Double] => '╫',
+        [Weight::Double, Weight::None, Weight::None, Weight::Heavy] => '╒',
+        [Weight::Double, Weight::None, Weight::Double, Weight::Heavy] => '╤',
+        [Weight::Double, Weight::Light, Weight::None, Weight::Heavy] => '╞',
+        [Weight::Double, Weight::Light, Weight::Double, Weight::Heavy] => '╪',
+        [Weight::Double, Weight::Heavy, Weight::None, Weight::None] => '╘',
+        [Weight::Double, Weight::Heavy, Weight::None, Weight::Light] => '╞',
+        [Weight::Double, Weight::Heavy, Weight::None, Weight::Heavy] => '╞',
+        [Weight::Double, Weight::Heavy, Weight::Double, Weight::None] => '╧',
+        [Weight::Double, Weight::Heavy, Weight::Double, Weight::Light] => '╪',
+        [Weight::Double, Weight::Heavy, Weight::Double, Weight::Heavy] => '╪',
 
         other => panic!("no box-drawing character for weight combination {:?}", other),
     }
@@ -408,7 +412,7 @@ impl Canvas {
 /// be given in order. Each endpoint only gets the arm pointing back into
 /// the line, not the one pointing past it. Panics if `start` and `end` are
 /// neither on the same row nor the same column.
-fn draw_line(canvas: &mut Canvas, start: impl Into<Coord>, end: impl Into<Coord>, weight: u8) {
+fn draw_line(canvas: &mut Canvas, start: impl Into<Coord>, end: impl Into<Coord>, weight: Weight) {
     let (mut start, mut end) = (start.into(), end.into());
     if start == end {
         return;
@@ -422,16 +426,16 @@ fn draw_line(canvas: &mut Canvas, start: impl Into<Coord>, end: impl Into<Coord>
     // The line starts and ends in the middle of a cell, so each endpoint stops short of a full arm.
     if start.y == end.y {
         for x in start.x..=end.x {
-            let right = if x == end.x { NONE } else { weight };
-            let left = if x == start.x { NONE } else { weight };
-            let code = [right, NONE, left, NONE];
+            let right = if x == end.x { Weight::None } else { weight };
+            let left = if x == start.x { Weight::None } else { weight };
+            let code = [right, Weight::None, left, Weight::None];
             canvas.draw_code((x, start.y), code);
         }
     } else if start.x == end.x {
         for y in start.y..=end.y {
-            let up = if y == start.y { NONE } else { weight };
-            let down = if y == end.y { NONE } else { weight };
-            let code = [NONE, up, NONE, down];
+            let up = if y == start.y { Weight::None } else { weight };
+            let down = if y == end.y { Weight::None } else { weight };
+            let code = [Weight::None, up, Weight::None, down];
             canvas.draw_code((start.x, y), code);
         }
     } else {
@@ -442,10 +446,10 @@ fn draw_line(canvas: &mut Canvas, start: impl Into<Coord>, end: impl Into<Coord>
 /// Draws the fixed tile borders between cells, independent of any wire.
 fn draw_grid_lines(canvas: &mut Canvas, (width, height): GridDimensions) {
     for tile_y in 0..=height {
-        draw_line(canvas, top_left((0, tile_y)), top_left((width, tile_y)), LIGHT);
+        draw_line(canvas, top_left((0, tile_y)), top_left((width, tile_y)), Weight::Light);
     }
     for tile_x in 0..=width {
-        draw_line(canvas, top_left((tile_x, 0)), top_left((tile_x, height)), LIGHT);
+        draw_line(canvas, top_left((tile_x, 0)), top_left((tile_x, height)), Weight::Light);
     }
 }
 
@@ -473,7 +477,11 @@ fn draw_wires_and_endpoints(
         for tile_x in 0..width {
             let wires = grid[tile_y][tile_x];
             let is_powered = powered_tiles[tile_y][tile_x];
-            let weight = if is_powered { HEAVY } else { LIGHT };
+            let weight = if is_powered {
+                Weight::Heavy
+            } else {
+                Weight::Light
+            };
             let center = center_mid((tile_x, tile_y));
             let mut arm_count = 0;
 
@@ -520,10 +528,10 @@ fn draw_barriers(canvas: &mut Canvas, (width, height): GridDimensions, wrapping:
     if wrapping {
         return;
     }
-    draw_line(canvas, top_left((0, 0)), top_left((width, 0)), DOUBLE);
-    draw_line(canvas, top_left((0, height)), top_left((width, height)), DOUBLE);
-    draw_line(canvas, top_left((0, 0)), top_left((0, height)), DOUBLE);
-    draw_line(canvas, top_left((width, 0)), top_left((width, height)), DOUBLE);
+    draw_line(canvas, top_left((0, 0)), top_left((width, 0)), Weight::Double);
+    draw_line(canvas, top_left((0, height)), top_left((width, height)), Weight::Double);
+    draw_line(canvas, top_left((0, 0)), top_left((0, height)), Weight::Double);
+    draw_line(canvas, top_left((width, 0)), top_left((width, height)), Weight::Double);
 }
 
 /// Draws the outer presentation frame, offset from the grid lines by
@@ -534,10 +542,10 @@ fn draw_frame(canvas: &mut Canvas) {
     let top = canvas.frame_top;
     let right = canvas.frame_right;
     let bottom = canvas.frame_bottom;
-    draw_line(canvas, (left, top), (right, top), LIGHT);
-    draw_line(canvas, (left, bottom), (right, bottom), LIGHT);
-    draw_line(canvas, (left, top), (left, bottom), LIGHT);
-    draw_line(canvas, (right, top), (right, bottom), LIGHT);
+    draw_line(canvas, (left, top), (right, top), Weight::Light);
+    draw_line(canvas, (left, bottom), (right, bottom), Weight::Light);
+    draw_line(canvas, (left, top), (left, bottom), Weight::Light);
+    draw_line(canvas, (right, top), (right, bottom), Weight::Light);
 }
 
 /// Flattens the drawn canvas into one line of text per screen row.
@@ -564,29 +572,31 @@ mod tests {
 
     #[test]
     fn four_way_light_cross() {
-        assert_eq!(glyph([LIGHT, LIGHT, LIGHT, LIGHT]), '┼');
+        assert_eq!(glyph([Weight::Light; 4]), '┼');
     }
 
     #[test]
     fn double_corner() {
         // right=double, up=none, left=none, down=double -> top-left
         // corner of a double-line box.
-        assert_eq!(glyph([DOUBLE, NONE, NONE, DOUBLE]), '╔');
+        assert_eq!(glyph([Weight::Double, Weight::None, Weight::None, Weight::Double]), '╔');
     }
 
     #[test]
     fn combine_takes_elementwise_max() {
-        let a = [NONE, LIGHT, NONE, LIGHT];
-        let b = [HEAVY, NONE, HEAVY, NONE];
-        assert_eq!(combine(a, b), [HEAVY, LIGHT, HEAVY, LIGHT]);
+        let a = [Weight::None, Weight::Light, Weight::None, Weight::Light];
+        let b = [Weight::Heavy, Weight::None, Weight::Heavy, Weight::None];
+        assert_eq!(combine(a, b), [Weight::Heavy, Weight::Light, Weight::Heavy, Weight::Light]);
     }
 
     #[test]
     fn heavy_downgrades_to_light() {
-        // There's no Unicode glyph that mixes DOUBLE and HEAVY,
-        // so in that case HEAVY turns into LIGHT.
-        let glyph_with_heavy = glyph([HEAVY, DOUBLE, HEAVY, DOUBLE]);
-        let glyph_with_light = glyph([LIGHT, DOUBLE, LIGHT, DOUBLE]);
+        // There's no Unicode glyph that mixes `Weight::Double` and `Weight::Heavy`,
+        // so in that case `Weight::Heavy` turns into `Weight::Light`.
+        let glyph_with_heavy =
+            glyph([Weight::Heavy, Weight::Double, Weight::Heavy, Weight::Double]);
+        let glyph_with_light =
+            glyph([Weight::Light, Weight::Double, Weight::Light, Weight::Double]);
         assert_eq!(glyph_with_heavy, glyph_with_light);
     }
 
@@ -596,10 +606,10 @@ mod tests {
         let end = (3, 0);
 
         let mut natural = Canvas::new((2, 2));
-        draw_line(&mut natural, start, end, LIGHT);
+        draw_line(&mut natural, start, end, Weight::Light);
 
         let mut reversed = Canvas::new((2, 2));
-        draw_line(&mut reversed, end, start, LIGHT);
+        draw_line(&mut reversed, end, start, Weight::Light);
 
         for y in 0..natural.height() {
             for x in 0..natural.width() {
@@ -613,13 +623,13 @@ mod tests {
     #[should_panic(expected = "draw_line only supports horizontal or vertical lines")]
     fn draw_line_panics_on_diagonal() {
         let mut canvas = Canvas::new((2, 2));
-        draw_line(&mut canvas, (0, 0), (3, 3), LIGHT);
+        draw_line(&mut canvas, (0, 0), (3, 3), Weight::Light);
     }
 
     #[test]
     fn draw_line_start_equals_end_is_noop() {
         let mut canvas = Canvas::new((2, 2));
-        draw_line(&mut canvas, (1, 1), (1, 1), LIGHT);
+        draw_line(&mut canvas, (1, 1), (1, 1), Weight::Light);
         assert_eq!(canvas.char_at((1, 1)), ' ');
     }
 
