@@ -1,6 +1,6 @@
 //! Raw bindings against the mid-end.
 
-use std::ffi::c_void;
+use std::ffi::{c_int, c_void};
 use std::ptr;
 use std::ptr::NonNull;
 
@@ -81,5 +81,21 @@ impl Midend {
 impl Drop for Midend {
     fn drop(&mut self) {
         unsafe { midend_free(self.raw.as_ptr()) };
+    }
+}
+
+extern "C" {
+    fn smalloc(size: usize) -> *mut c_void;
+}
+
+/// Seeds the mid-end's RNG.
+#[no_mangle]
+extern "C" fn get_random_seed(randseed: *mut *mut c_void, randseedsize: *mut c_int) {
+    let seed: u64 = rand::random();
+    unsafe {
+        let buf = smalloc(std::mem::size_of::<u64>()) as *mut u64;
+        buf.write(seed);
+        *randseed = buf as *mut c_void;
+        *randseedsize = std::mem::size_of::<u64>() as c_int;
     }
 }

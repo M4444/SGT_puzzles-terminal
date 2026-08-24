@@ -1,25 +1,16 @@
 /*
  * terminal.c: terminal front end for my puzzle collection. Stub
  * implementations of the mid-end's frontend callbacks and the drawing
- * API, except get_random_seed() (needs real per-run randomness) and
- * emit_state() (hands the current game state to the Rust side). Every
- * other drawing call is a no-op, since this front end renders text
- * directly.
+ * API, except emit_state() (hands the current game state to the Rust
+ * side). Every other drawing call is a no-op, since this front end
+ * renders text directly.
  */
 
 #include <stdarg.h>
-#include <time.h>
 
 #include "puzzles.h"
 
 void frontend_default_colour(frontend *fe, float *output) {}
-void get_random_seed(void **randseed, int *randseedsize)
-{
-    time_t *t = snew(time_t);
-    *t = time(NULL);
-    *randseed = (void *)t;
-    *randseedsize = sizeof(time_t);
-}
 void deactivate_timer(frontend *fe) {}
 void activate_timer(frontend *fe) {}
 drawing *drawing_new(const drawing_api *api, midend *me, void *handle)

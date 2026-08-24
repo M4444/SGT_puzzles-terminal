@@ -9,3 +9,6 @@ path = "src/main.rs"
 
 [build-dependencies]
 cc = "1"
+
+[dependencies]
+rand = "0.10.2"
