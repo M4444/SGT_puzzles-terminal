@@ -83,6 +83,9 @@ extern "C" fn rust_emit_state(
     wrapping: bool,
     width: c_int,
     height: c_int,
+    cur_x: c_int,
+    cur_y: c_int,
+    cur_visible: bool,
 ) {
     let width = width as usize;
     let height = height as usize;
@@ -104,8 +107,8 @@ extern "C" fn rust_emit_state(
         wrapping,
         tiles: tiles.chunks(width).map(|row| row.to_vec()).collect(),
         cursor: Cursor {
-            position: (width / 2, height / 2),
-            visible: true,
+            position: (cur_x as usize, cur_y as usize),
+            visible: cur_visible,
         },
     });
 }
