@@ -124,3 +124,38 @@ pub fn generate() -> NetPuzzle {
 
     context.puzzle.take().expect("emit_state was not called")
 }
+
+/// A live, playable Net session: owns the mid-end and the context
+/// `emit_state` writes into, for as long as the session is played.
+pub struct Session {
+    midend: Midend,
+    context: Box<EmitContext>,
+}
+
+impl Session {
+    pub fn new() -> Session {
+        let mut context = Box::new(EmitContext::default());
+        let context_ptr = &mut *context as *mut EmitContext as *mut c_void;
+
+        let midend =
+            Midend::new(unsafe { &THEGAME }, unsafe { &TERMINAL_DRAWING_API }, context_ptr);
+        midend.new_game();
+        midend.redraw();
+
+        Session { midend, context }
+    }
+
+    /// The puzzle state as of the most recent `new()`/`process_key()`.
+    pub fn puzzle(&self) -> &NetPuzzle {
+        self.context
+            .puzzle
+            .as_ref()
+            .expect("emit_state was not called")
+    }
+
+    /// Sends one raw key/button code straight to the mid-end. Returns
+    /// `false` if it signalled quit.
+    pub fn process_key(&mut self, button: c_int) -> bool {
+        self.midend.process_key(button)
+    }
+}

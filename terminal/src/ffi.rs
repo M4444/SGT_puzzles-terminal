@@ -1,6 +1,6 @@
 //! Raw bindings against the mid-end.
 
-use std::ffi::{c_int, c_void};
+use std::ffi::{c_float, c_int, c_void};
 use std::ptr;
 use std::ptr::NonNull;
 
@@ -43,7 +43,17 @@ extern "C" {
     fn midend_new_game(me: *mut RawMidend);
     fn midend_redraw(me: *mut RawMidend);
     fn midend_free(me: *mut RawMidend);
+    fn midend_process_key(me: *mut RawMidend, x: c_int, y: c_int, button: c_int) -> c_int;
+    fn midend_timer(me: *mut RawMidend, tplus: c_float);
 }
+
+/// Net's rotation animation is `ROTATE_TIME` (net.c, 0.13 seconds); this
+/// is comfortably longer, so one `midend_timer` call always finishes it.
+const SKIP_ANIMATION_TIME: c_float = 1.0;
+
+/// `midend_process_key`'s return value when it signals the front end
+/// should quit (puzzles.h's `PKR_QUIT`).
+const PKR_QUIT: c_int = 0;
 
 /// A live mid-end handle. Every drawing call silently no-ops, except
 /// `emit_state` (see `net.rs`), the one function our own `drawing_api`
@@ -75,6 +85,16 @@ impl Midend {
     /// gets called.
     pub(crate) fn redraw(&self) {
         unsafe { midend_redraw(self.raw.as_ptr()) };
+    }
+
+    /// Sends one key/button press, then force-finishes any resulting
+    /// animation so the next redraw shows the real final state, rather
+    /// than the pre-move state an in-progress animation shows. Returns
+    /// `false` if the mid-end signalled `PKR_QUIT`.
+    pub(crate) fn process_key(&self, button: c_int) -> bool {
+        let result = unsafe { midend_process_key(self.raw.as_ptr(), 0, 0, button) };
+        unsafe { midend_timer(self.raw.as_ptr(), SKIP_ANIMATION_TIME) };
+        result != PKR_QUIT
     }
 }
 

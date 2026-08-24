@@ -11,4 +11,5 @@ path = "src/main.rs"
 cc = "1"
 
 [dependencies]
+crossterm = "0.29.0"
 rand = "0.10.2"
