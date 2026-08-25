@@ -11,7 +11,7 @@ extern "C" {
 }
 
 /// Which directions a tile has a wire pointing in.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub struct Wires {
     pub right: bool,
     pub up: bool,
@@ -45,8 +45,37 @@ pub type GridDimensions = (usize, usize);
 pub type TileCoord = (usize, usize);
 pub type Tiles = Vec<Vec<Tile>>;
 
+/// A tile coordinate's neighbours one step over in each direction.
+pub trait TileCoordNeighbors {
+    fn right(&self) -> TileCoord;
+    #[allow(dead_code)]
+    fn top(&self) -> TileCoord;
+    #[allow(dead_code)]
+    fn left(&self) -> TileCoord;
+    fn bottom(&self) -> TileCoord;
+}
+
+impl TileCoordNeighbors for TileCoord {
+    fn right(&self) -> TileCoord {
+        let (x, y) = *self;
+        (x + 1, y)
+    }
+    fn top(&self) -> TileCoord {
+        let (x, y) = *self;
+        (x, y - 1)
+    }
+    fn left(&self) -> TileCoord {
+        let (x, y) = *self;
+        (x - 1, y)
+    }
+    fn bottom(&self) -> TileCoord {
+        let (x, y) = *self;
+        (x, y + 1)
+    }
+}
+
 /// A single tile's wires and whether it's currently powered or locked.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub struct Tile {
     pub wires: Wires,
     pub powered: bool,

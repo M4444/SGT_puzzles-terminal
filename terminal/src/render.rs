@@ -235,7 +235,7 @@ fn tile_offset_to_coord((tile_x, tile_y): TileCoord, (offset_x, offset_y): Offse
 //                  │       b = center_mid
 //                  ▼       c = center_right
 // top_left ─────►┌───┐◄─── top_right
-// left_side ────►│abc│
+// left_side ────►│abc│◄─── right_side
 // bottom_left ──►└───┘◄─── bottom_right
 fn top_left(tile_coord: TileCoord) -> Coord {
     tile_offset_to_coord(tile_coord, (0, 0))
@@ -258,6 +258,9 @@ fn center_mid(tile_coord: TileCoord) -> Coord {
 fn center_right(tile_coord: TileCoord) -> Coord {
     tile_offset_to_coord(tile_coord, (3, 1))
 }
+fn right_side(tile_coord: TileCoord) -> Coord {
+    tile_offset_to_coord(tile_coord, (TILE_WIDTH - 1, 1))
+}
 fn bottom_left(tile_coord: TileCoord) -> Coord {
     tile_offset_to_coord(tile_coord, (0, TILE_HEIGHT - 1))
 }
@@ -266,19 +269,20 @@ fn bottom_right(tile_coord: TileCoord) -> Coord {
 }
 
 /// The tile's three content coordinates.
-fn tile_content_coords(tile: TileCoord) -> [Coord; 3] {
-    [center_left(tile), center_mid(tile), center_right(tile)]
+fn tile_content_coords(tile: TileCoord) -> impl Iterator<Item = Coord> {
+    (1..TILE_WIDTH - 1).map(move |offset_x| tile_offset_to_coord(tile, (offset_x, 1)))
 }
 
 /// The tile's entire footprint: all four of its borders and its content.
-fn tile_full_coords(tile: TileCoord) -> Vec<Coord> {
-    let mut coords = Vec::with_capacity(TILE_WIDTH * TILE_HEIGHT);
-    for offset_y in 0..TILE_HEIGHT {
-        for offset_x in 0..TILE_WIDTH {
-            coords.push(tile_offset_to_coord(tile, (offset_x, offset_y)));
-        }
-    }
-    coords
+fn tile_full_coords(tile: TileCoord) -> impl Iterator<Item = Coord> {
+    (0..TILE_HEIGHT).flat_map(move |offset_y| {
+        (0..TILE_WIDTH).map(move |offset_x| tile_offset_to_coord(tile, (offset_x, offset_y)))
+    })
+}
+
+/// The tile's top border, excluding its left and right corners.
+fn top_border_middle(tile: TileCoord) -> impl Iterator<Item = Coord> {
+    (1..TILE_WIDTH - 1).map(move |offset_x| tile_offset_to_coord(tile, (offset_x, 0)))
 }
 
 /// One screen coordinate: either an accumulated `Code` segment (resolved to
@@ -354,6 +358,12 @@ impl Canvas {
     fn mark_reversed(&mut self, coord: impl Into<Coord>) {
         let coord = coord.into();
         self.reversed[coord.y][coord.x] = true;
+    }
+
+    fn mark_reversed_region(&mut self, coords: impl IntoIterator<Item = Coord>) {
+        for coord in coords {
+            self.mark_reversed(coord);
+        }
     }
 
     fn is_reversed(&self, coord: impl Into<Coord>) -> bool {
@@ -520,28 +530,107 @@ pub enum LockStyle {
     ReverseTileCenter,
     /// Reverse video over the entire tile: all four of its borders and
     /// its content.
-    #[default]
     ReverseTileFull,
+    /// Reverse video over the tile's content, plus each border whose far
+    /// side is either another locked tile or outside the grid, leaving
+    /// borders against an unlocked neighbour untouched.
+    #[default]
+    ReverseTileConnected,
 }
 
 /// Highlights every locked tile.
-fn draw_locked(
+fn draw_locked(canvas: &mut Canvas, tiles: &Tiles, dimensions: GridDimensions, style: LockStyle) {
+    match style {
+        LockStyle::ReverseTileCenter => draw_locked_content(canvas, tiles, dimensions),
+        LockStyle::ReverseTileFull => draw_locked_full(canvas, tiles, dimensions),
+        LockStyle::ReverseTileConnected => {
+            draw_locked_content(canvas, tiles, dimensions);
+            draw_locked_horizontal_connections(canvas, tiles, dimensions);
+            draw_locked_vertical_connections(canvas, tiles, dimensions);
+            draw_locked_junctions(canvas, tiles, dimensions);
+        }
+    }
+}
+
+/// Reverses every locked tile's content cells.
+fn draw_locked_content(canvas: &mut Canvas, tiles: &Tiles, (width, height): GridDimensions) {
+    for tile_y in 0..height {
+        for tile_x in 0..width {
+            if tiles[tile_y][tile_x].locked {
+                canvas.mark_reversed_region(tile_content_coords((tile_x, tile_y)));
+            }
+        }
+    }
+}
+
+/// Reverses every locked tile's entire footprint.
+fn draw_locked_full(canvas: &mut Canvas, tiles: &Tiles, (width, height): GridDimensions) {
+    for tile_y in 0..height {
+        for tile_x in 0..width {
+            if tiles[tile_y][tile_x].locked {
+                canvas.mark_reversed_region(tile_full_coords((tile_x, tile_y)));
+            }
+        }
+    }
+}
+
+/// Reverses each vertical border between two horizontally adjacent
+/// tiles, or against the grid's left/right edge, wherever every tile
+/// touching it is locked.
+fn draw_locked_horizontal_connections(
     canvas: &mut Canvas,
     tiles: &Tiles,
     (width, height): GridDimensions,
-    style: LockStyle,
 ) {
     for tile_y in 0..height {
-        for tile_x in 0..width {
-            if !tiles[tile_y][tile_x].locked {
-                continue;
+        for border_x in 0..=width {
+            let left_locked_or_edge = border_x == 0 || tiles[tile_y][border_x - 1].locked;
+            let right_locked_or_edge = border_x == width || tiles[tile_y][border_x].locked;
+            if left_locked_or_edge && right_locked_or_edge {
+                canvas.mark_reversed(left_side((border_x, tile_y)));
             }
-            let coords = match style {
-                LockStyle::ReverseTileCenter => tile_content_coords((tile_x, tile_y)).to_vec(),
-                LockStyle::ReverseTileFull => tile_full_coords((tile_x, tile_y)),
-            };
-            for coord in coords {
-                canvas.mark_reversed(coord);
+        }
+    }
+}
+
+/// Reverses each horizontal border between two vertically adjacent
+/// tiles, or against the grid's top/bottom edge, wherever every tile
+/// touching it is locked.
+fn draw_locked_vertical_connections(
+    canvas: &mut Canvas,
+    tiles: &Tiles,
+    (width, height): GridDimensions,
+) {
+    for tile_x in 0..width {
+        for border_y in 0..=height {
+            let top_locked_or_edge = border_y == 0 || tiles[border_y - 1][tile_x].locked;
+            let bottom_locked_or_edge = border_y == height || tiles[border_y][tile_x].locked;
+            if top_locked_or_edge && bottom_locked_or_edge {
+                canvas.mark_reversed_region(top_border_middle((tile_x, border_y)));
+            }
+        }
+    }
+}
+
+/// Reverses each junction shared by up to four tiles wherever every tile
+/// touching it is locked.
+fn draw_locked_junctions(canvas: &mut Canvas, tiles: &Tiles, (width, height): GridDimensions) {
+    for junction_y in 0..=height {
+        for junction_x in 0..=width {
+            let top_left_locked_or_edge =
+                junction_x == 0 || junction_y == 0 || tiles[junction_y - 1][junction_x - 1].locked;
+            let top_right_locked_or_edge =
+                junction_x == width || junction_y == 0 || tiles[junction_y - 1][junction_x].locked;
+            let bottom_left_locked_or_edge =
+                junction_x == 0 || junction_y == height || tiles[junction_y][junction_x - 1].locked;
+            let bottom_right_locked_or_edge =
+                junction_x == width || junction_y == height || tiles[junction_y][junction_x].locked;
+            if top_left_locked_or_edge
+                && top_right_locked_or_edge
+                && bottom_left_locked_or_edge
+                && bottom_right_locked_or_edge
+            {
+                canvas.mark_reversed(top_left((junction_x, junction_y)));
             }
         }
     }
@@ -606,6 +695,7 @@ fn flatten_to_lines(canvas: &Canvas) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::net::TileCoordNeighbors;
 
     #[test]
     fn blank_is_space() {
@@ -683,12 +773,14 @@ mod tests {
 
     #[test]
     fn tile_boundary_shared_x() {
-        assert_tile_boundary_shared((0, 0), (1, 0), (TILE_WIDTH - 1, 0));
+        let tile = (0, 0);
+        assert_tile_boundary_shared(tile, tile.right(), (TILE_WIDTH - 1, 0));
     }
 
     #[test]
     fn tile_boundary_shared_y() {
-        assert_tile_boundary_shared((0, 0), (0, 1), (0, TILE_HEIGHT - 1));
+        let tile = (0, 0);
+        assert_tile_boundary_shared(tile, tile.bottom(), (0, TILE_HEIGHT - 1));
     }
 
     #[test]
@@ -771,6 +863,82 @@ mod tests {
         let lines = flatten_to_lines(&canvas);
         assert!(lines[0].starts_with(&SetAttribute(Attribute::Reverse).to_string()));
         assert!(lines[0].contains(&SetAttribute(Attribute::NoReverse).to_string()));
+    }
+
+    fn grid_with_locked((width, height): GridDimensions, locked_positions: &[TileCoord]) -> Tiles {
+        let mut tiles = vec![vec![crate::net::Tile::default(); width]; height];
+        for &(x, y) in locked_positions {
+            tiles[y][x].locked = true;
+        }
+        tiles
+    }
+
+    #[test]
+    fn draw_locked_connected_reverses_border_shared_with_another_locked_tile() {
+        let dimensions = (4, 3);
+        let target_tile = (1, 1);
+        let tiles = grid_with_locked(dimensions, &[target_tile, target_tile.right()]);
+        let mut canvas = Canvas::new(dimensions);
+        draw_locked(&mut canvas, &tiles, dimensions, LockStyle::ReverseTileConnected);
+
+        assert!(canvas.is_reversed(right_side(target_tile)));
+    }
+
+    #[test]
+    fn draw_locked_connected_does_not_reverse_border_against_an_unlocked_neighbour() {
+        let dimensions = (4, 3);
+        let target_tile = (1, 1);
+        let tiles = grid_with_locked(dimensions, &[target_tile, target_tile.right()]);
+        let mut canvas = Canvas::new(dimensions);
+        draw_locked(&mut canvas, &tiles, dimensions, LockStyle::ReverseTileConnected);
+
+        assert!(!canvas.is_reversed(top_mid(target_tile)));
+    }
+
+    #[test]
+    fn draw_locked_connected_reverses_border_against_the_grid_edge() {
+        let dimensions = (3, 3);
+        let target_tile = (0, 0);
+        let tiles = grid_with_locked(dimensions, &[target_tile]);
+        let mut canvas = Canvas::new(dimensions);
+        draw_locked(&mut canvas, &tiles, dimensions, LockStyle::ReverseTileConnected);
+
+        assert!(canvas.is_reversed(top_mid(target_tile)));
+        assert!(canvas.is_reversed(left_side(target_tile)));
+        assert!(!canvas.is_reversed(right_side(target_tile)));
+    }
+
+    #[test]
+    fn draw_locked_connected_forms_a_solid_rectangle_for_a_horizontal_pair() {
+        let dimensions = (4, 3);
+        let target_tile = (1, 1);
+        let tiles = grid_with_locked(dimensions, &[target_tile, target_tile.right()]);
+        let mut canvas = Canvas::new(dimensions);
+        draw_locked(&mut canvas, &tiles, dimensions, LockStyle::ReverseTileConnected);
+
+        // The corners of the shared border also touch the unlocked
+        // tiles above and below, and stay untouched.
+        assert!(!canvas.is_reversed(top_right(target_tile)));
+        assert!(!canvas.is_reversed(bottom_right(target_tile)));
+    }
+
+    #[test]
+    fn draw_locked_connected_closes_the_interior_corner_of_a_solid_block() {
+        let dimensions = (3, 3);
+        let target_tile = (0, 0);
+        let tiles = grid_with_locked(
+            dimensions,
+            &[
+                target_tile,
+                target_tile.right(),
+                target_tile.bottom(),
+                target_tile.right().bottom(),
+            ],
+        );
+        let mut canvas = Canvas::new(dimensions);
+        draw_locked(&mut canvas, &tiles, dimensions, LockStyle::ReverseTileConnected);
+
+        assert!(canvas.is_reversed(bottom_right(target_tile)));
     }
 
     #[test]
