@@ -355,6 +355,8 @@ impl Canvas {
         }
     }
 
+    /// Sets reverse video at this position. Marking it again from another
+    /// source of the same kind leaves it reversed.
     fn mark_reversed(&mut self, coord: impl Into<Coord>) {
         let coord = coord.into();
         self.reversed[coord.y][coord.x] = true;
@@ -363,6 +365,19 @@ impl Canvas {
     fn mark_reversed_region(&mut self, coords: impl IntoIterator<Item = Coord>) {
         for coord in coords {
             self.mark_reversed(coord);
+        }
+    }
+
+    /// Toggles reverse video at this position. Used only by the cursor:
+    /// landing on an already-reversed locked tile cancels back to plain.
+    fn toggle_reversed(&mut self, coord: impl Into<Coord>) {
+        let coord = coord.into();
+        self.reversed[coord.y][coord.x] = !self.reversed[coord.y][coord.x];
+    }
+
+    fn toggle_reversed_region(&mut self, coords: impl IntoIterator<Item = Coord>) {
+        for coord in coords {
+            self.toggle_reversed(coord);
         }
     }
 
@@ -485,12 +500,12 @@ fn draw_source(canvas: &mut Canvas, source: TileCoord) {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub enum CursorStyle {
     /// A heavy-weight box drawn around the tile's own border.
+    #[default]
     Outline,
     /// Reverse video over just the tile's content cells.
     ReverseTileCenter,
     /// Reverse video over the entire tile: all four of its borders and
     /// its content.
-    #[default]
     ReverseTileFull,
 }
 
@@ -508,17 +523,10 @@ fn draw_cursor(canvas: &mut Canvas, cursor: Cursor, style: CursorStyle) {
             draw_line(canvas, top_right(tile), bottom_right(tile), Weight::Heavy);
         }
         CursorStyle::ReverseTileCenter => {
-            canvas.mark_reversed(center_left(cursor.position));
-            canvas.mark_reversed(center_mid(cursor.position));
-            canvas.mark_reversed(center_right(cursor.position));
+            canvas.toggle_reversed_region(tile_content_coords(cursor.position));
         }
         CursorStyle::ReverseTileFull => {
-            for offset_y in 0..TILE_HEIGHT {
-                for offset_x in 0..TILE_WIDTH {
-                    canvas
-                        .mark_reversed(tile_offset_to_coord(cursor.position, (offset_x, offset_y)));
-                }
-            }
+            canvas.toggle_reversed_region(tile_full_coords(cursor.position));
         }
     }
 }
@@ -863,6 +871,33 @@ mod tests {
         let lines = flatten_to_lines(&canvas);
         assert!(lines[0].starts_with(&SetAttribute(Attribute::Reverse).to_string()));
         assert!(lines[0].contains(&SetAttribute(Attribute::NoReverse).to_string()));
+    }
+
+    #[test]
+    fn mark_reversed_twice_stays_reversed() {
+        let mut canvas = Canvas::new((1, 1));
+        canvas.mark_reversed((0, 0));
+        canvas.mark_reversed((0, 0));
+
+        assert!(canvas.is_reversed((0, 0)));
+    }
+
+    #[test]
+    fn toggle_reversed_twice_cancels_out() {
+        let mut canvas = Canvas::new((1, 1));
+        canvas.toggle_reversed((0, 0));
+        canvas.toggle_reversed((0, 0));
+
+        assert!(!canvas.is_reversed((0, 0)));
+    }
+
+    #[test]
+    fn toggle_reversed_cancels_a_prior_mark_reversed() {
+        let mut canvas = Canvas::new((1, 1));
+        canvas.mark_reversed((0, 0));
+        canvas.toggle_reversed((0, 0));
+
+        assert!(!canvas.is_reversed((0, 0)));
     }
 
     fn grid_with_locked((width, height): GridDimensions, locked_positions: &[TileCoord]) -> Tiles {
