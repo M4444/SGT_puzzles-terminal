@@ -213,15 +213,19 @@ const CANVAS_MARGIN_Y: usize = 0;
 const GRID_OFFSET_X: usize = CANVAS_MARGIN_X + FRAME_MARGIN_X + 1;
 const GRID_OFFSET_Y: usize = CANVAS_MARGIN_Y + FRAME_MARGIN_Y + 1;
 
+/// Columns per tile: two shared border columns plus three center columns.
+const TILE_WIDTH: usize = 5;
+/// Rows per tile: two shared border rows plus one center row.
+const TILE_HEIGHT: usize = 3;
+
 /// Addressing a tile's contents can be done relative to the tile: the tile
 /// is given as `(tile_x, tile_y)`, and the offset within it as a
-/// quarter-step `offset_x` across (0..=4) and a half-step `offset_y` down
-/// (0..=2), for a fixed 5 columns (one shared junction column + 3 center
-/// columns) by 3 rows (one shared border row + 1 center row), overlapping
-/// by one step with each neighbouring tile to merge borders between them.
+/// quarter-step `offset_x` across (0..TILE_WIDTH) and a half-step
+/// `offset_y` down (0..TILE_HEIGHT), overlapping by one step with each
+/// neighbouring tile to merge borders between them.
 fn tile_offset_to_coord((tile_x, tile_y): TileCoord, (offset_x, offset_y): Offset) -> Coord {
-    let x = GRID_OFFSET_X + 4 * tile_x + offset_x;
-    let y = GRID_OFFSET_Y + 2 * tile_y + offset_y;
+    let x = GRID_OFFSET_X + (TILE_WIDTH - 1) * tile_x + offset_x;
+    let y = GRID_OFFSET_Y + (TILE_HEIGHT - 1) * tile_y + offset_y;
     Coord::new(x, y)
 }
 
@@ -240,7 +244,7 @@ fn top_mid(tile_coord: TileCoord) -> Coord {
     tile_offset_to_coord(tile_coord, (2, 0))
 }
 fn top_right(tile_coord: TileCoord) -> Coord {
-    tile_offset_to_coord(tile_coord, (4, 0))
+    tile_offset_to_coord(tile_coord, (TILE_WIDTH - 1, 0))
 }
 fn left_side(tile_coord: TileCoord) -> Coord {
     tile_offset_to_coord(tile_coord, (0, 1))
@@ -255,10 +259,10 @@ fn center_right(tile_coord: TileCoord) -> Coord {
     tile_offset_to_coord(tile_coord, (3, 1))
 }
 fn bottom_left(tile_coord: TileCoord) -> Coord {
-    tile_offset_to_coord(tile_coord, (0, 2))
+    tile_offset_to_coord(tile_coord, (0, TILE_HEIGHT - 1))
 }
 fn bottom_right(tile_coord: TileCoord) -> Coord {
-    tile_offset_to_coord(tile_coord, (4, 2))
+    tile_offset_to_coord(tile_coord, (TILE_WIDTH - 1, TILE_HEIGHT - 1))
 }
 
 /// The tile's three content coordinates.
@@ -268,9 +272,9 @@ fn tile_content_coords(tile: TileCoord) -> [Coord; 3] {
 
 /// The tile's entire footprint: all four of its borders and its content.
 fn tile_full_coords(tile: TileCoord) -> Vec<Coord> {
-    let mut coords = Vec::with_capacity(15);
-    for offset_y in 0..=2 {
-        for offset_x in 0..=4 {
+    let mut coords = Vec::with_capacity(TILE_WIDTH * TILE_HEIGHT);
+    for offset_y in 0..TILE_HEIGHT {
+        for offset_x in 0..TILE_WIDTH {
             coords.push(tile_offset_to_coord(tile, (offset_x, offset_y)));
         }
     }
@@ -304,8 +308,8 @@ struct Canvas {
 
 impl Canvas {
     fn new((tile_width, tile_height): GridDimensions) -> Canvas {
-        let board_width = 4 * tile_width + 1;
-        let board_height = 2 * tile_height + 1;
+        let board_width = (TILE_WIDTH - 1) * tile_width + 1;
+        let board_height = (TILE_HEIGHT - 1) * tile_height + 1;
         let canvas_width = board_width + 2 * FRAME_MARGIN_X + 2 + 2 * CANVAS_MARGIN_X;
         let canvas_height = board_height + 2 * FRAME_MARGIN_Y + 2 + 2 * CANVAS_MARGIN_Y;
         Canvas {
@@ -499,8 +503,8 @@ fn draw_cursor(canvas: &mut Canvas, cursor: Cursor, style: CursorStyle) {
             canvas.mark_reversed(center_right(cursor.position));
         }
         CursorStyle::ReverseTileFull => {
-            for offset_y in 0..=2 {
-                for offset_x in 0..=4 {
+            for offset_y in 0..TILE_HEIGHT {
+                for offset_x in 0..TILE_WIDTH {
                     canvas
                         .mark_reversed(tile_offset_to_coord(cursor.position, (offset_x, offset_y)));
                 }
@@ -679,12 +683,12 @@ mod tests {
 
     #[test]
     fn tile_boundary_shared_x() {
-        assert_tile_boundary_shared((0, 0), (1, 0), (4, 0));
+        assert_tile_boundary_shared((0, 0), (1, 0), (TILE_WIDTH - 1, 0));
     }
 
     #[test]
     fn tile_boundary_shared_y() {
-        assert_tile_boundary_shared((0, 0), (0, 1), (0, 2));
+        assert_tile_boundary_shared((0, 0), (0, 1), (0, TILE_HEIGHT - 1));
     }
 
     #[test]
