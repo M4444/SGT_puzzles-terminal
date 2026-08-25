@@ -31,9 +31,10 @@ fn main() {
 
     let mut session = net::Session::new();
     let cursor_style = render::CursorStyle::default();
+    let lock_style = render::LockStyle::default();
 
     loop {
-        let board = render::render_board(session.puzzle(), cursor_style);
+        let board = render::render_board(session.puzzle(), cursor_style, lock_style);
         execute!(stdout(), Clear(ClearType::All), MoveTo(0, 0)).ok();
         print!("{}\r\n", board.replace('\n', "\r\n"));
         stdout().flush().ok();

@@ -26,6 +26,10 @@ const WIRE_UP: u8 = 0x2;
 const WIRE_LEFT: u8 = 0x4;
 const WIRE_DOWN: u8 = 0x8;
 
+/// Bit flag within a tile's byte marking it locked, matching net.c's
+/// `LOCKED` `#define`.
+const LOCKED_BIT: u8 = 0x10;
+
 impl Wires {
     fn from_bits(bits: u8) -> Wires {
         Wires {
@@ -41,11 +45,12 @@ pub type GridDimensions = (usize, usize);
 pub type TileCoord = (usize, usize);
 pub type Tiles = Vec<Vec<Tile>>;
 
-/// A single tile's wires and whether it's currently powered.
+/// A single tile's wires and whether it's currently powered or locked.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Tile {
     pub wires: Wires,
     pub powered: bool,
+    pub locked: bool,
 }
 
 /// The keyboard cursor's position and whether it's currently shown.
@@ -99,6 +104,7 @@ extern "C" fn rust_emit_state(
         .map(|(&bits, &active)| Tile {
             wires: Wires::from_bits(bits),
             powered: active != 0,
+            locked: bits & LOCKED_BIT != 0,
         })
         .collect();
 

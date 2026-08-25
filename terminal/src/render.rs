@@ -5,9 +5,14 @@
 //! then flattens the result to text.
 
 use crate::net::{Cursor, GridDimensions, NetPuzzle, TileCoord, Tiles};
+use crossterm::style::{Attribute, SetAttribute};
 use std::cmp::max;
 
-pub fn render_board(puzzle: &NetPuzzle, cursor_style: CursorStyle) -> String {
+pub fn render_board(
+    puzzle: &NetPuzzle,
+    cursor_style: CursorStyle,
+    lock_style: LockStyle,
+) -> String {
     let dimensions = puzzle.dimensions;
     let source = source_position(puzzle);
 
@@ -17,6 +22,7 @@ pub fn render_board(puzzle: &NetPuzzle, cursor_style: CursorStyle) -> String {
     draw_wires_and_endpoints(&mut canvas, &puzzle.tiles, dimensions);
     draw_source(&mut canvas, source);
     draw_barriers(&mut canvas, dimensions, puzzle.wrapping);
+    draw_locked(&mut canvas, &puzzle.tiles, dimensions, lock_style);
     draw_cursor(&mut canvas, puzzle.cursor, cursor_style);
     draw_frame(&mut canvas);
 
@@ -255,6 +261,22 @@ fn bottom_right(tile_coord: TileCoord) -> Coord {
     tile_offset_to_coord(tile_coord, (4, 2))
 }
 
+/// The tile's three content coordinates.
+fn tile_content_coords(tile: TileCoord) -> [Coord; 3] {
+    [center_left(tile), center_mid(tile), center_right(tile)]
+}
+
+/// The tile's entire footprint: all four of its borders and its content.
+fn tile_full_coords(tile: TileCoord) -> Vec<Coord> {
+    let mut coords = Vec::with_capacity(15);
+    for offset_y in 0..=2 {
+        for offset_x in 0..=4 {
+            coords.push(tile_offset_to_coord(tile, (offset_x, offset_y)));
+        }
+    }
+    coords
+}
+
 /// One screen coordinate: either an accumulated `Code` segment (resolved to
 /// a box-drawing character via `glyph()`), or a literal marker character
 /// for content that isn't expressible as arm weights at all, like the
@@ -487,6 +509,40 @@ fn draw_cursor(canvas: &mut Canvas, cursor: Cursor, style: CursorStyle) {
     }
 }
 
+/// How a locked tile is visually marked.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub enum LockStyle {
+    /// Reverse video over just the tile's content cells.
+    ReverseTileCenter,
+    /// Reverse video over the entire tile: all four of its borders and
+    /// its content.
+    #[default]
+    ReverseTileFull,
+}
+
+/// Highlights every locked tile.
+fn draw_locked(
+    canvas: &mut Canvas,
+    tiles: &Tiles,
+    (width, height): GridDimensions,
+    style: LockStyle,
+) {
+    for tile_y in 0..height {
+        for tile_x in 0..width {
+            if !tiles[tile_y][tile_x].locked {
+                continue;
+            }
+            let coords = match style {
+                LockStyle::ReverseTileCenter => tile_content_coords((tile_x, tile_y)).to_vec(),
+                LockStyle::ReverseTileFull => tile_full_coords((tile_x, tile_y)),
+            };
+            for coord in coords {
+                canvas.mark_reversed(coord);
+            }
+        }
+    }
+}
+
 /// Draws barrier walls, fixed obstacles blocking a wire connection, in
 /// heavy weight across the border they occupy. A wrapping grid has no
 /// outer boundary, so this draws nothing; otherwise it forms the full
@@ -522,13 +578,21 @@ fn flatten_to_lines(canvas: &Canvas) -> Vec<String> {
     let mut lines: Vec<String> = Vec::with_capacity(canvas.height());
     for y in 0..canvas.height() {
         let mut line = String::with_capacity(canvas.width());
+        let mut reversed = false;
         for x in 0..canvas.width() {
-            let c = canvas.char_at((x, y));
-            if canvas.is_reversed((x, y)) {
-                line.push_str(&format!("\x1b[7m{c}\x1b[27m"));
-            } else {
-                line.push(c);
+            if canvas.is_reversed((x, y)) != reversed {
+                reversed = !reversed;
+                let attribute = if reversed {
+                    Attribute::Reverse
+                } else {
+                    Attribute::NoReverse
+                };
+                line.push_str(&SetAttribute(attribute).to_string());
             }
+            line.push(canvas.char_at((x, y)));
+        }
+        if reversed {
+            line.push_str(&SetAttribute(Attribute::NoReverse).to_string());
         }
         lines.push(line);
     }
@@ -641,7 +705,7 @@ mod tests {
     #[test]
     fn render_board_is_a_well_formed_rectangle() {
         let puzzle = crate::net::generate();
-        let board = render_board(&puzzle, CursorStyle::Outline);
+        let board = render_board(&puzzle, CursorStyle::Outline, LockStyle::default());
         let lines: Vec<&str> = board.lines().collect();
         assert_eq!(lines.len(), 13);
         for line in &lines {
@@ -653,7 +717,7 @@ mod tests {
     fn render_board_does_not_panic_across_many_generated_boards() {
         for _ in 0..100 {
             let puzzle = crate::net::generate();
-            render_board(&puzzle, CursorStyle::Outline);
+            render_board(&puzzle, CursorStyle::Outline, LockStyle::default());
         }
     }
 
@@ -701,8 +765,8 @@ mod tests {
         canvas.mark_reversed((0, 0));
 
         let lines = flatten_to_lines(&canvas);
-        assert!(lines[0].starts_with("\x1b[7m"));
-        assert!(lines[0].contains("\x1b[27m"));
+        assert!(lines[0].starts_with(&SetAttribute(Attribute::Reverse).to_string()));
+        assert!(lines[0].contains(&SetAttribute(Attribute::NoReverse).to_string()));
     }
 
     #[test]
