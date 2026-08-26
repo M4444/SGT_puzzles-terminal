@@ -25,6 +25,7 @@ pub fn render_board(
     draw_locked(&mut canvas, &puzzle.tiles, dimensions, lock_style);
     draw_cursor(&mut canvas, puzzle.cursor, cursor_style);
     draw_frame(&mut canvas);
+    draw_status_bar(&mut canvas, &puzzle.status);
 
     flatten_to_lines(&canvas).join("\n")
 }
@@ -308,6 +309,9 @@ struct Canvas {
     frame_top: usize,
     frame_right: usize,
     frame_bottom: usize,
+    /// The status bar's row, always directly below `frame_bottom`
+    /// regardless of `CANVAS_MARGIN_Y`.
+    status_bar_row: usize,
 }
 
 impl Canvas {
@@ -315,14 +319,18 @@ impl Canvas {
         let board_width = (TILE_WIDTH - 1) * tile_width + 1;
         let board_height = (TILE_HEIGHT - 1) * tile_height + 1;
         let canvas_width = board_width + 2 * FRAME_MARGIN_X + 2 + 2 * CANVAS_MARGIN_X;
-        let canvas_height = board_height + 2 * FRAME_MARGIN_Y + 2 + 2 * CANVAS_MARGIN_Y;
+        let frame_top = CANVAS_MARGIN_Y;
+        let frame_bottom = frame_top + board_height + 2 * FRAME_MARGIN_Y + 1;
+        let status_bar_row = frame_bottom + 1;
+        let canvas_height = status_bar_row + 1 + CANVAS_MARGIN_Y;
         Canvas {
             cells: vec![vec![Cell::Segment(BLANK); canvas_width]; canvas_height],
             reversed: vec![vec![false; canvas_width]; canvas_height],
             frame_left: CANVAS_MARGIN_X,
-            frame_top: CANVAS_MARGIN_Y,
+            frame_top,
             frame_right: canvas_width - 1 - CANVAS_MARGIN_X,
-            frame_bottom: canvas_height - 1 - CANVAS_MARGIN_Y,
+            frame_bottom,
+            status_bar_row,
         }
     }
 
@@ -345,6 +353,20 @@ impl Canvas {
     fn draw_char(&mut self, coord: impl Into<Coord>, c: char) {
         let coord = coord.into();
         self.cells[coord.y][coord.x] = Cell::Marker(c);
+    }
+
+    /// Draws each character of `text` in order, starting at `start` and
+    /// advancing one column per character. Characters past the canvas's
+    /// right edge are dropped rather than panicking.
+    fn draw_text(&mut self, start: impl Into<Coord>, text: &str) {
+        let start = start.into();
+        for (offset_x, c) in text.chars().enumerate() {
+            let x = start.x + offset_x;
+            if x >= self.width() {
+                break;
+            }
+            self.draw_char((x, start.y), c);
+        }
     }
 
     fn char_at(&self, coord: impl Into<Coord>) -> char {
@@ -674,6 +696,11 @@ fn draw_frame(canvas: &mut Canvas) {
     draw_line(canvas, (right, top), (right, bottom), FRAME_WEIGHT);
 }
 
+/// Draws `status` along `canvas.status_bar_row`, starting at `frame_left`.
+fn draw_status_bar(canvas: &mut Canvas, status: &str) {
+    canvas.draw_text((canvas.frame_left, canvas.status_bar_row), status);
+}
+
 /// Flattens the drawn canvas into one line of text per screen row.
 fn flatten_to_lines(canvas: &Canvas) -> Vec<String> {
     let mut lines: Vec<String> = Vec::with_capacity(canvas.height());
@@ -795,7 +822,7 @@ mod tests {
     fn canvas_new_computes_expected_size() {
         let canvas = Canvas::new((5, 5));
         assert_eq!(canvas.width(), 25);
-        assert_eq!(canvas.height(), 13);
+        assert_eq!(canvas.height(), 14);
     }
 
     #[test]
@@ -811,7 +838,7 @@ mod tests {
         let puzzle = crate::net::generate();
         let board = render_board(&puzzle, CursorStyle::Outline, LockStyle::default());
         let lines: Vec<&str> = board.lines().collect();
-        assert_eq!(lines.len(), 13);
+        assert_eq!(lines.len(), 14);
         for line in &lines {
             assert_eq!(line.chars().count(), 25);
         }

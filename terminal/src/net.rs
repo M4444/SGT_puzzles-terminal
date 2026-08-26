@@ -1,7 +1,7 @@
 //! Generating and reading Net puzzles.
 
 use crate::ffi::{Midend, RawDrawing, RawDrawingApi, RawGame, RawGameState};
-use std::ffi::{c_int, c_void};
+use std::ffi::{c_char, c_int, c_void, CStr};
 
 extern "C" {
     #[link_name = "thegame"]
@@ -96,12 +96,13 @@ pub struct NetPuzzle {
     pub wrapping: bool,
     pub tiles: Tiles,
     pub cursor: Cursor,
+    pub status: String,
 }
 
-/// Where `emit_state` (called during `Midend::redraw`) deposits the
-/// puzzle it receives, via the `drhandle` passed to `Midend::new`.
+/// The front end's state, recovered from `dr->handle` by every
+/// drawing-API callback.
 #[derive(Default)]
-struct EmitContext {
+struct Frontend {
     puzzle: Option<NetPuzzle>,
 }
 
@@ -123,7 +124,7 @@ extern "C" fn rust_emit_state(
 ) {
     let width = width as usize;
     let height = height as usize;
-    let context = unsafe { &mut *((*dr).handle as *mut EmitContext) };
+    let frontend = unsafe { &mut *((*dr).handle as *mut Frontend) };
 
     let raw_active = unsafe { std::slice::from_raw_parts(active, width * height) };
     let raw_tiles = unsafe { std::slice::from_raw_parts(tiles, width * height) };
@@ -137,7 +138,7 @@ extern "C" fn rust_emit_state(
         })
         .collect();
 
-    context.puzzle = Some(NetPuzzle {
+    frontend.puzzle = Some(NetPuzzle {
         dimensions: (width, height),
         wrapping,
         tiles: tiles.chunks(width).map(|row| row.to_vec()).collect(),
@@ -145,44 +146,54 @@ extern "C" fn rust_emit_state(
             position: (cur_x as usize, cur_y as usize),
             visible: cur_visible,
         },
+        status: String::new(),
     });
+}
+
+/// Called from net.c's `status_bar`, right after `rust_emit_state` within
+/// the same `game_redraw`.
+#[no_mangle]
+extern "C" fn rust_status_bar(dr: *mut RawDrawing, text: *const c_char) {
+    let frontend = unsafe { &mut *((*dr).handle as *mut Frontend) };
+    let text = unsafe { CStr::from_ptr(text) }.to_string_lossy().into_owned();
+    frontend.puzzle.as_mut().expect("emit_state was not called").status = text;
 }
 
 /// Generates a fresh Net puzzle via FFI and reads it from the live state.
 pub fn generate() -> NetPuzzle {
-    let mut context = Box::new(EmitContext::default());
-    let context_ptr = &mut *context as *mut EmitContext as *mut c_void;
+    let mut frontend = Box::new(Frontend::default());
+    let frontend_ptr = &mut *frontend as *mut Frontend as *mut c_void;
 
-    let midend = Midend::new(unsafe { &THEGAME }, unsafe { &TERMINAL_DRAWING_API }, context_ptr);
+    let midend = Midend::new(unsafe { &THEGAME }, unsafe { &TERMINAL_DRAWING_API }, frontend_ptr);
     midend.new_game();
     midend.redraw();
 
-    context.puzzle.take().expect("emit_state was not called")
+    frontend.puzzle.take().expect("emit_state was not called")
 }
 
-/// A live, playable Net session: owns the mid-end and the context
-/// `emit_state` writes into, for as long as the session is played.
+/// A live, playable Net session: owns the mid-end and the front end
+/// state, for as long as the session is played.
 pub struct Session {
     midend: Midend,
-    context: Box<EmitContext>,
+    frontend: Box<Frontend>,
 }
 
 impl Session {
     pub fn new() -> Session {
-        let mut context = Box::new(EmitContext::default());
-        let context_ptr = &mut *context as *mut EmitContext as *mut c_void;
+        let mut frontend = Box::new(Frontend::default());
+        let frontend_ptr = &mut *frontend as *mut Frontend as *mut c_void;
 
         let midend =
-            Midend::new(unsafe { &THEGAME }, unsafe { &TERMINAL_DRAWING_API }, context_ptr);
+            Midend::new(unsafe { &THEGAME }, unsafe { &TERMINAL_DRAWING_API }, frontend_ptr);
         midend.new_game();
         midend.redraw();
 
-        Session { midend, context }
+        Session { midend, frontend }
     }
 
     /// The puzzle state as of the most recent `new()`/`process_key()`.
     pub fn puzzle(&self) -> &NetPuzzle {
-        self.context
+        self.frontend
             .puzzle
             .as_ref()
             .expect("emit_state was not called")

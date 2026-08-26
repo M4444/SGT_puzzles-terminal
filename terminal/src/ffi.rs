@@ -56,8 +56,8 @@ const SKIP_ANIMATION_TIME: c_float = 1.0;
 const PKR_QUIT: c_int = 0;
 
 /// A live mid-end handle. Every drawing call silently no-ops, except
-/// `emit_state` (see `net.rs`), the one function our own `drawing_api`
-/// actually implements.
+/// `emit_state` and `status_bar` (see `net.rs`), which hand the puzzle
+/// state and status text back to Rust.
 pub(crate) struct Midend {
     raw: NonNull<RawMidend>,
 }
@@ -82,7 +82,7 @@ impl Midend {
     }
 
     /// Triggers the backend's own redraw, which is where `emit_state`
-    /// gets called.
+    /// and `status_bar` get called.
     pub(crate) fn redraw(&self) {
         unsafe { midend_redraw(self.raw.as_ptr()) };
     }
