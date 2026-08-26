@@ -66,7 +66,8 @@ void document_add_puzzle(document *doc, const game *game, game_params *par,
 extern void rust_emit_state(drawing *dr, const game_state *state,
 			    const unsigned char *active, const unsigned char *tiles,
 			    bool wrapping, int width, int height,
-			    int cur_x, int cur_y, bool cur_visible);
+			    int cur_x, int cur_y, bool cur_visible,
+			    int source_x, int source_y);
 const drawing_api terminal_drawing_api = {
     .version = 1,
     .emit_state = rust_emit_state,

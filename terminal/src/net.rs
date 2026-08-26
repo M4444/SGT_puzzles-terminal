@@ -96,6 +96,7 @@ pub struct NetPuzzle {
     pub wrapping: bool,
     pub tiles: Tiles,
     pub cursor: Cursor,
+    pub source: TileCoord,
     pub status: String,
 }
 
@@ -121,6 +122,8 @@ extern "C" fn rust_emit_state(
     cur_x: c_int,
     cur_y: c_int,
     cur_visible: bool,
+    source_x: c_int,
+    source_y: c_int,
 ) {
     let width = width as usize;
     let height = height as usize;
@@ -146,6 +149,7 @@ extern "C" fn rust_emit_state(
             position: (cur_x as usize, cur_y as usize),
             visible: cur_visible,
         },
+        source: (source_x as usize, source_y as usize),
         status: String::new(),
     });
 }

@@ -14,13 +14,12 @@ pub fn render_board(
     lock_style: LockStyle,
 ) -> String {
     let dimensions = puzzle.dimensions;
-    let source = source_position(puzzle);
 
     let mut canvas = Canvas::new(dimensions);
 
     draw_grid_lines(&mut canvas, dimensions);
     draw_wires_and_endpoints(&mut canvas, &puzzle.tiles, dimensions);
-    draw_source(&mut canvas, source);
+    draw_source(&mut canvas, puzzle.source);
     draw_barriers(&mut canvas, dimensions, puzzle.wrapping);
     draw_locked(&mut canvas, &puzzle.tiles, dimensions, lock_style);
     draw_cursor(&mut canvas, puzzle.cursor, cursor_style);
@@ -171,13 +170,6 @@ fn glyph(code: Code) -> char {
 
         other => panic!("no box-drawing character for weight combination {:?}", other),
     }
-}
-
-/// Where the source tile is. Always the board's center; doesn't reflect
-/// moves made during play.
-fn source_position(puzzle: &NetPuzzle) -> TileCoord {
-    let (width, height) = puzzle.dimensions;
-    (width / 2, height / 2)
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
