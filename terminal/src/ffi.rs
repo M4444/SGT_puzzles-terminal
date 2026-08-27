@@ -1,6 +1,6 @@
 //! Raw bindings against the mid-end.
 
-use std::ffi::{c_float, c_int, c_void};
+use std::ffi::{c_double, c_float, c_int, c_void};
 use std::ptr;
 use std::ptr::NonNull;
 
@@ -45,6 +45,18 @@ extern "C" {
     fn midend_free(me: *mut RawMidend);
     fn midend_process_key(me: *mut RawMidend, x: c_int, y: c_int, button: c_int) -> c_int;
     fn midend_timer(me: *mut RawMidend, tplus: c_float);
+    fn midend_size(
+        me: *mut RawMidend,
+        x: *mut c_int,
+        y: *mut c_int,
+        user_size: bool,
+        device_pixel_ratio: c_double,
+    );
+    fn midend_tilesize(me: *mut RawMidend) -> c_int;
+    /// Reads net.c's own `WINDOW_OFFSET` from a small function in
+    /// `terminal.c` that mirrors its `#ifdef SMALL_SCREEN` exactly, so
+    /// it can never drift from net.c's real value.
+    pub(crate) fn window_offset() -> c_int;
 }
 
 /// Net's rotation animation is `ROTATE_TIME` (net.c, 0.13 seconds); this
@@ -75,10 +87,30 @@ impl Midend {
         Midend { raw }
     }
 
+    /// Settles the mid-end on the backend's own preferred tile size
+    /// (net.c's `PREFERRED_TILE_SIZE`), so `tilesize()` returns a real,
+    /// known value instead of `0`. `midend_size` shrinks its result to
+    /// fit within the given space unless it's already big enough not
+    /// to matter, so passing `c_int::MAX` guarantees the preferred size
+    /// always fits. Must run after `new_game`: it writes into the
+    /// mid-end's drawstate, which doesn't exist until a game does.
+    fn fix_tilesize(&self) {
+        let mut x = c_int::MAX;
+        let mut y = c_int::MAX;
+        unsafe { midend_size(self.raw.as_ptr(), &mut x, &mut y, false, 1.0) };
+    }
+
+    /// The tile size settled on by `fix_tilesize`, needed to convert a
+    /// tile position into the pixel coordinates `process_click` expects.
+    pub(crate) fn tilesize(&self) -> c_int {
+        unsafe { midend_tilesize(self.raw.as_ptr()) }
+    }
+
     /// Generates a fresh puzzle at whatever the current params are
     /// (`default_params()` unless changed).
     pub(crate) fn new_game(&self) {
         unsafe { midend_new_game(self.raw.as_ptr()) };
+        self.fix_tilesize();
     }
 
     /// Triggers the backend's own redraw, which is where `emit_state`
@@ -93,6 +125,16 @@ impl Midend {
     /// `false` if the mid-end signalled `PKR_QUIT`.
     pub(crate) fn process_key(&self, button: c_int) -> bool {
         let result = unsafe { midend_process_key(self.raw.as_ptr(), 0, 0, button) };
+        unsafe { midend_timer(self.raw.as_ptr(), SKIP_ANIMATION_TIME) };
+        result != PKR_QUIT
+    }
+
+    /// Sends one mouse button press at the given pixel coordinates,
+    /// then force-finishes any resulting animation the same way
+    /// `process_key` does. Returns `false` if the mid-end signalled
+    /// `PKR_QUIT`.
+    pub(crate) fn process_click(&self, x: c_int, y: c_int, button: c_int) -> bool {
+        let result = unsafe { midend_process_key(self.raw.as_ptr(), x, y, button) };
         unsafe { midend_timer(self.raw.as_ptr(), SKIP_ANIMATION_TIME) };
         result != PKR_QUIT
     }

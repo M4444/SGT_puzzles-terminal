@@ -1,8 +1,9 @@
 //! Renders a Net board as a box-drawing string for the terminal.
 //!
-//! `render_board()` draws a given `NetPuzzle` onto a `Canvas` in phases
-//! (grid lines, wires and endpoints, source, barriers, cursor, frame),
-//! then flattens the result to text.
+//! Given a `NetPuzzle`, `render_board()` draws it onto a `Canvas` in
+//! phases (grid lines, wires and endpoints, source, barriers, cursor,
+//! frame), then flattens the result to text. Given a screen
+//! coordinate, `tile_at()` locates which tile it falls within.
 
 use crate::net::{Cursor, GridDimensions, NetPuzzle, TileCoord, Tiles};
 use crossterm::style::{Attribute, SetAttribute};
@@ -286,6 +287,35 @@ fn tile_offset_to_coord((tile_x, tile_y): TileCoord, (offset_x, offset_y): Offse
     let x = GRID_OFFSET_X + (TILE_WIDTH - 1) * tile_x + offset_x;
     let y = GRID_OFFSET_Y + (TILE_HEIGHT - 1) * tile_y + offset_y;
     Coord::new(x, y)
+}
+
+/// Which tile a screen coordinate falls within, or `None` if it's
+/// outside the grid entirely.
+fn coord_to_tile(coord: Coord, (width, height): GridDimensions) -> Option<TileCoord> {
+    let relative = Coord::new(
+        coord.x.checked_sub(GRID_OFFSET_X)?,
+        coord.y.checked_sub(GRID_OFFSET_Y)?,
+    );
+    let tile_x = relative.x / (TILE_WIDTH - 1);
+    let tile_y = relative.y / (TILE_HEIGHT - 1);
+    if tile_x < width && tile_y < height {
+        Some((tile_x, tile_y))
+    } else {
+        None
+    }
+}
+
+/// Given a screen coordinate, returns which tile's content cells
+/// contain it, or `None` if it landed on a border, a junction, or
+/// outside the grid.
+pub fn tile_at(position: impl Into<Coord>, dimensions: GridDimensions) -> Option<TileCoord> {
+    let position = position.into();
+    let tile = coord_to_tile(position, dimensions)?;
+    if tile_content_coords(tile).any(|c| c == position) {
+        Some(tile)
+    } else {
+        None
+    }
 }
 
 // Helper functions name specific coordinates within a tile's footprint:

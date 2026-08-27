@@ -13,6 +13,12 @@
 
 extern void rust_status_bar(drawing *dr, const char *text);
 
+/* Returns net.c's own WINDOW_OFFSET, which it never exposes outside
+ * its own compilation unit. Mirrors its #ifdef exactly, so this
+ * always matches net.c's real value regardless of whether
+ * SMALL_SCREEN is defined. */
+int window_offset(void);
+
 void frontend_default_colour(frontend *fe, float *output) {}
 void deactivate_timer(frontend *fe) {}
 void activate_timer(frontend *fe) {}
@@ -60,6 +66,14 @@ int print_rgb_hatched_colour(drawing *dr, float r, float g, float b, int hatch)
 void print_line_width(drawing *dr, int width) {}
 void print_line_dotted(drawing *dr, bool dotted) {}
 void status_bar(drawing *dr, const char *text) { rust_status_bar(dr, text); }
+int window_offset(void)
+{
+#ifndef SMALL_SCREEN
+    return 16;
+#else
+    return 4;
+#endif
+}
 void document_add_puzzle(document *doc, const game *game, game_params *par,
 			 game_ui *ui, game_state *st, game_state *st2) {}
 #ifdef EXPOSE_GAME_STATE

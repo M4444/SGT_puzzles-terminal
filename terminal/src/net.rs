@@ -1,6 +1,6 @@
 //! Generating and reading Net puzzles.
 
-use crate::ffi::{Midend, RawDrawing, RawDrawingApi, RawGame, RawGameState};
+use crate::ffi::{window_offset, Midend, RawDrawing, RawDrawingApi, RawGame, RawGameState};
 use std::ffi::{c_char, c_int, c_void, CStr};
 
 extern "C" {
@@ -212,4 +212,23 @@ impl Session {
     pub fn process_key(&mut self, button: c_int) -> bool {
         self.midend.process_key(button)
     }
+
+    /// Sends one mouse button press on the given tile, converting it
+    /// into the pixel coordinates net.c's own click handling expects.
+    /// Returns `false` if it signalled quit.
+    pub fn process_click(&mut self, (tile_x, tile_y): TileCoord, button: c_int) -> bool {
+        let tilesize = self.midend.tilesize();
+        let line_thick = line_thick(tilesize);
+        let window_offset = unsafe { window_offset() };
+        // Centers the click in the tile.
+        let x = window_offset + line_thick + tile_x as c_int * tilesize + tilesize / 2;
+        let y = window_offset + line_thick + tile_y as c_int * tilesize + tilesize / 2;
+        self.midend.process_click(x, y, button)
+    }
+}
+
+/// Computes net.c's `LINE_THICK`, always derived from the tile size
+/// the same way regardless of platform.
+fn line_thick(tilesize: c_int) -> c_int {
+    (tilesize + 47) / 48
 }
