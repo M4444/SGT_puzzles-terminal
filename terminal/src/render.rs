@@ -3,9 +3,9 @@
 //! Given a `NetPuzzle`, `render_board()` draws it onto a `Canvas` in
 //! phases (grid lines, wires and endpoints, source, barriers, cursor,
 //! frame), then flattens the result to text. Given a screen
-//! coordinate, `tile_at()` locates which tile it falls within.
+//! coordinate, `tiles_at()` locates every tile it falls within.
 
-use crate::net::{Cursor, GridDimensions, NetPuzzle, TileCoord, Tiles};
+use crate::net::{Cursor, GridDimensions, NetPuzzle, TileCoord, TileCoordNeighbors, Tiles};
 use crossterm::style::{Attribute, SetAttribute};
 use std::borrow::Cow;
 use std::cmp::max;
@@ -289,33 +289,58 @@ fn tile_offset_to_coord((tile_x, tile_y): TileCoord, (offset_x, offset_y): Offse
     Coord::new(x, y)
 }
 
-/// Which tile a screen coordinate falls within, or `None` if it's
-/// outside the grid entirely.
-fn coord_to_tile(coord: Coord, (width, height): GridDimensions) -> Option<TileCoord> {
-    let relative = Coord::new(
-        coord.x.checked_sub(GRID_OFFSET_X)?,
-        coord.y.checked_sub(GRID_OFFSET_Y)?,
-    );
-    let tile_x = relative.x / (TILE_WIDTH - 1);
-    let tile_y = relative.y / (TILE_HEIGHT - 1);
-    if tile_x < width && tile_y < height {
-        Some((tile_x, tile_y))
-    } else {
-        None
+/// The inverse of `tile_offset_to_coord`: which tile a screen coordinate
+/// falls in, and its offset within that tile. `None` if the coordinate
+/// is outside the grid entirely.
+fn coord_to_tile_offset(coord: Coord, (width, height): GridDimensions) -> Option<(TileCoord, Offset)> {
+    // Left of or above the grid.
+    if coord.x < GRID_OFFSET_X || coord.y < GRID_OFFSET_Y {
+        return None;
     }
+
+    let relative_x = coord.x - GRID_OFFSET_X;
+    let relative_y = coord.y - GRID_OFFSET_Y;
+
+    // Right of or below the grid.
+    if relative_x >= (TILE_WIDTH - 1) * width || relative_y >= (TILE_HEIGHT - 1) * height {
+        return None;
+    }
+
+    let tile = (relative_x / (TILE_WIDTH - 1), relative_y / (TILE_HEIGHT - 1));
+    let offset = (relative_x % (TILE_WIDTH - 1), relative_y % (TILE_HEIGHT - 1));
+    Some((tile, offset))
 }
 
-/// Given a screen coordinate, returns which tile's content cells
-/// contain it, or `None` if it landed on a border, a junction, or
-/// outside the grid.
-pub fn tile_at(position: impl Into<Coord>, dimensions: GridDimensions) -> Option<TileCoord> {
-    let position = position.into();
-    let tile = coord_to_tile(position, dimensions)?;
-    if tile_content_coords(tile).any(|c| c == position) {
-        Some(tile)
-    } else {
-        None
+/// Every tile whose full footprint (borders included) contains a
+/// screen coordinate: just the one tile for a content cell or an
+/// outer grid edge, two for a border shared between neighbours, or up
+/// to four for a junction.
+pub fn tiles_at(position: impl Into<Coord>, dimensions: GridDimensions) -> Vec<TileCoord> {
+    let Some((tile, (offset_x, offset_y))) = coord_to_tile_offset(position.into(), dimensions)
+    else {
+        return Vec::new();
+    };
+    let (tile_x, tile_y) = tile;
+
+    let on_border_column = offset_x == 0;
+    let on_border_row = offset_y == 0;
+
+    // Center, or the single tile touched at an outer grid edge.
+    let mut tiles = vec![tile];
+    // Vertical border: shared with the tile to the left.
+    if on_border_column && tile_x > 0 {
+        tiles.push(tile.left());
     }
+    // Horizontal border: shared with the tile above.
+    if on_border_row && tile_y > 0 {
+        tiles.push(tile.top());
+    }
+    // Junction: also shared with the tile above and to the left.
+    if on_border_column && on_border_row && tile_x > 0 && tile_y > 0 {
+        tiles.push(tile.left().top());
+    }
+
+    tiles
 }
 
 // Helper functions name specific coordinates within a tile's footprint:

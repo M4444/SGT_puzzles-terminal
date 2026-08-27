@@ -9,6 +9,7 @@ use crossterm::event::{
 };
 use crossterm::execute;
 use crossterm::terminal::{disable_raw_mode, enable_raw_mode, Clear, ClearType};
+use net::{Session, TileCoord};
 use std::io::{stdout, Write};
 
 /// Raw key codes from puzzles.h's enum.
@@ -82,12 +83,31 @@ fn main() {
             };
             if let Some(button) = button {
                 let position = (mouse_event.column as usize, mouse_event.row as usize);
-                if let Some(tile) = render::tile_at(position, session.puzzle().dimensions) {
+                let possible_tiles = render::tiles_at(position, session.puzzle().dimensions);
+                if let Some(tile) = resolve_tile(&possible_tiles, button, &session) {
                     if !session.process_click(tile, button) {
                         break;
                     }
                 }
             }
         }
+    }
+}
+
+/// A click resolves to one tile either because it landed cleanly on
+/// one, or (for anything but the lock-toggle button) because exactly
+/// one of several overlapping candidates isn't locked, since a locked
+/// tile can never be rotated.
+fn resolve_tile(possible_tiles: &[TileCoord], button: i32, session: &Session) -> Option<TileCoord> {
+    if let [only] = possible_tiles {
+        Some(*only)
+    } else if button != MIDDLE_BUTTON {
+        if let [only] = session.exclude_locked(possible_tiles).as_slice() {
+            Some(*only)
+        } else {
+            None
+        }
+    } else {
+        None
     }
 }

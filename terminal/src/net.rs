@@ -48,9 +48,7 @@ pub type Tiles = Vec<Vec<Tile>>;
 /// A tile coordinate's neighbours one step over in each direction.
 pub trait TileCoordNeighbors {
     fn right(&self) -> TileCoord;
-    #[allow(dead_code)]
     fn top(&self) -> TileCoord;
-    #[allow(dead_code)]
     fn left(&self) -> TileCoord;
     fn bottom(&self) -> TileCoord;
 }
@@ -224,6 +222,14 @@ impl Session {
         let x = window_offset + line_thick + tile_x as c_int * tilesize + tilesize / 2;
         let y = window_offset + line_thick + tile_y as c_int * tilesize + tilesize / 2;
         self.midend.process_click(x, y, button)
+    }
+
+    pub fn exclude_locked(&self, tile_coords: &[TileCoord]) -> Vec<TileCoord> {
+        tile_coords
+            .iter()
+            .copied()
+            .filter(|&(x, y)| !self.puzzle().tiles[y][x].locked)
+            .collect()
     }
 }
 
