@@ -90,13 +90,14 @@ pub struct Cursor {
 }
 
 /// A Net puzzle, indexed `[row][column]`.
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct NetPuzzle {
     pub dimensions: GridDimensions,
     pub wrapping: bool,
     pub tiles: Tiles,
     pub cursor: Cursor,
     pub source: TileCoord,
+    pub origin: TileCoord,
     pub status: String,
 }
 
@@ -124,6 +125,8 @@ extern "C" fn rust_emit_state(
     cur_visible: bool,
     source_x: c_int,
     source_y: c_int,
+    org_x: c_int,
+    org_y: c_int,
 ) {
     let width = width as usize;
     let height = height as usize;
@@ -150,6 +153,7 @@ extern "C" fn rust_emit_state(
             visible: cur_visible,
         },
         source: (source_x as usize, source_y as usize),
+        origin: (org_x as usize, org_y as usize),
         status: String::new(),
     });
 }

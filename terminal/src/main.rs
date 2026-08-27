@@ -15,6 +15,7 @@ const CURSOR_LEFT: i32 = 0x020B;
 const CURSOR_RIGHT: i32 = 0x020C;
 const CURSOR_SELECT: i32 = 0x020D;
 const MOD_CTRL: i32 = 0x1000;
+const MOD_SHFT: i32 = 0x2000;
 
 /// Restores the terminal on the way out, including on panic.
 struct TerminalGuard;
@@ -50,11 +51,13 @@ fn main() {
                 KeyCode::Enter => Some(CURSOR_SELECT),
                 _ => None,
             };
-            let button = if key_event.modifiers.contains(KeyModifiers::CONTROL) {
-                button.map(|button| button | MOD_CTRL)
-            } else {
-                button
-            };
+            let mut button = button;
+            if key_event.modifiers.contains(KeyModifiers::CONTROL) {
+                button = button.map(|button| button | MOD_CTRL);
+            }
+            if key_event.modifiers.contains(KeyModifiers::SHIFT) {
+                button = button.map(|button| button | MOD_SHFT);
+            }
             if let Some(button) = button {
                 if !session.process_key(button) {
                     break;

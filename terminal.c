@@ -67,7 +67,8 @@ extern void rust_emit_state(drawing *dr, const game_state *state,
 			    const unsigned char *active, const unsigned char *tiles,
 			    bool wrapping, int width, int height,
 			    int cur_x, int cur_y, bool cur_visible,
-			    int source_x, int source_y);
+			    int source_x, int source_y,
+			    int org_x, int org_y);
 const drawing_api terminal_drawing_api = {
     .version = 1,
     .emit_state = rust_emit_state,

@@ -6,6 +6,7 @@
 
 use crate::net::{Cursor, GridDimensions, NetPuzzle, TileCoord, Tiles};
 use crossterm::style::{Attribute, SetAttribute};
+use std::borrow::Cow;
 use std::cmp::max;
 
 pub fn render_board(
@@ -13,6 +14,7 @@ pub fn render_board(
     cursor_style: CursorStyle,
     lock_style: LockStyle,
 ) -> String {
+    let puzzle = puzzle_relative_to_origin(puzzle);
     let dimensions = puzzle.dimensions;
 
     let mut canvas = Canvas::new(dimensions);
@@ -27,6 +29,70 @@ pub fn render_board(
     draw_status_bar(&mut canvas, &puzzle.status);
 
     flatten_to_lines(&canvas).join("\n")
+}
+
+/// Transforms a puzzle's tiles, source, and cursor from game coordinates
+/// into their position relative to the current origin.
+/// Returns the puzzle unchanged if the origin is `(0, 0)`.
+fn puzzle_relative_to_origin(puzzle: &NetPuzzle) -> Cow<'_, NetPuzzle> {
+    let origin = puzzle.origin;
+    if origin == (0, 0) {
+        return Cow::Borrowed(puzzle);
+    }
+
+    let dimensions = puzzle.dimensions;
+    Cow::Owned(NetPuzzle {
+        dimensions,
+        wrapping: puzzle.wrapping,
+        tiles: shift_tiles_by_origin(&puzzle.tiles, dimensions, origin),
+        cursor: cursor_relative_to_origin(puzzle.cursor, dimensions, origin),
+        source: relative_to_origin(puzzle.source, dimensions, origin),
+        origin,
+        status: puzzle.status.clone(),
+    })
+}
+
+/// Transforms a cursor's position from game coordinates into its
+/// position relative to the current origin, leaving its visibility
+/// unchanged.
+fn cursor_relative_to_origin(cursor: Cursor, dimensions: GridDimensions, origin: TileCoord) -> Cursor {
+    Cursor {
+        position: relative_to_origin(cursor.position, dimensions, origin),
+        visible: cursor.visible,
+    }
+}
+
+/// Shifts `tiles` by `origin`, the same transform net.c's own redraw
+/// applies for a moved viewport origin.
+fn shift_tiles_by_origin(
+    tiles: &Tiles,
+    (width, height): GridDimensions,
+    (origin_x, origin_y): TileCoord,
+) -> Tiles {
+    (0..height)
+        .map(|viewport_y| {
+            let y = (viewport_y + origin_y) % height;
+            (0..width)
+                .map(|viewport_x| {
+                    let x = (viewport_x + origin_x) % width;
+                    tiles[y][x]
+                })
+                .collect()
+        })
+        .collect()
+}
+
+/// Converts a game coordinate (as reported by the mid-end) into its
+/// position relative to the current origin.
+fn relative_to_origin(
+    (x, y): TileCoord,
+    (width, height): GridDimensions,
+    (origin_x, origin_y): TileCoord,
+) -> TileCoord {
+    (
+        (x + width - origin_x) % width,
+        (y + height - origin_y) % height,
+    )
 }
 
 /// How strongly a line is drawn.
