@@ -2953,7 +2953,8 @@ static void game_redraw(drawing *dr, game_drawstate *ds,
     active = compute_active(state, ui->cx, ui->cy);
     loops = compute_loops(state, ui->unlocked_loops);
 #ifdef EXPOSE_GAME_STATE
-    dr->api->emit_state(dr, state, active, state->tiles, state->wrapping,
+    dr->api->emit_state(dr, state, active, state->tiles,
+                        state->imm->barriers,
                         state->width, state->height,
                         ui->cur_x, ui->cur_y, ui->cur_visible,
                         ui->cx, ui->cy,

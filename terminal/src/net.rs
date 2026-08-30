@@ -19,12 +19,12 @@ pub struct Wires {
     pub down: bool,
 }
 
-/// Bit flags within a tile's wire nibble, matching net.c's `R`/`U`/`L`/`D`
+/// Bit flags within a direction nibble, matching net.c's `R`/`U`/`L`/`D`
 /// `#define`s.
-const WIRE_RIGHT: u8 = 0x1;
-const WIRE_UP: u8 = 0x2;
-const WIRE_LEFT: u8 = 0x4;
-const WIRE_DOWN: u8 = 0x8;
+const RIGHT: u8 = 0x1;
+const UP: u8 = 0x2;
+const LEFT: u8 = 0x4;
+const DOWN: u8 = 0x8;
 
 /// Bit flag within a tile's byte marking it locked, matching net.c's
 /// `LOCKED` `#define`.
@@ -33,10 +33,31 @@ const LOCKED_BIT: u8 = 0x10;
 impl Wires {
     fn from_bits(bits: u8) -> Wires {
         Wires {
-            right: bits & WIRE_RIGHT != 0,
-            up: bits & WIRE_UP != 0,
-            left: bits & WIRE_LEFT != 0,
-            down: bits & WIRE_DOWN != 0,
+            right: bits & RIGHT != 0,
+            up: bits & UP != 0,
+            left: bits & LEFT != 0,
+            down: bits & DOWN != 0,
+        }
+    }
+}
+
+/// Which of a tile's four edges carry a barrier, a wall no wire can
+/// cross. Both tiles either side of a wall record it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub struct Barriers {
+    pub right: bool,
+    pub up: bool,
+    pub left: bool,
+    pub down: bool,
+}
+
+impl Barriers {
+    fn from_bits(bits: u8) -> Barriers {
+        Barriers {
+            right: bits & RIGHT != 0,
+            up: bits & UP != 0,
+            left: bits & LEFT != 0,
+            down: bits & DOWN != 0,
         }
     }
 }
@@ -72,10 +93,12 @@ impl TileCoordNeighbors for TileCoord {
     }
 }
 
-/// A single tile's wires and whether it's currently powered or locked.
+/// A single tile's wires and barriers, and whether it's currently
+/// powered or locked.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub struct Tile {
     pub wires: Wires,
+    pub barriers: Barriers,
     pub powered: bool,
     pub locked: bool,
 }
@@ -91,7 +114,6 @@ pub struct Cursor {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct NetPuzzle {
     pub dimensions: GridDimensions,
-    pub wrapping: bool,
     pub tiles: Tiles,
     pub cursor: Cursor,
     pub source: TileCoord,
@@ -115,7 +137,7 @@ extern "C" fn rust_emit_state(
     _state: *const RawGameState,
     active: *const u8,
     tiles: *const u8,
-    wrapping: bool,
+    barriers: *const u8,
     width: c_int,
     height: c_int,
     cur_x: c_int,
@@ -132,11 +154,14 @@ extern "C" fn rust_emit_state(
 
     let raw_active = unsafe { std::slice::from_raw_parts(active, width * height) };
     let raw_tiles = unsafe { std::slice::from_raw_parts(tiles, width * height) };
+    let raw_barriers = unsafe { std::slice::from_raw_parts(barriers, width * height) };
     let tiles: Vec<Tile> = raw_tiles
         .iter()
         .zip(raw_active.iter())
-        .map(|(&bits, &active)| Tile {
+        .zip(raw_barriers.iter())
+        .map(|((&bits, &active), &barriers)| Tile {
             wires: Wires::from_bits(bits),
+            barriers: Barriers::from_bits(barriers),
             powered: active != 0,
             locked: bits & LOCKED_BIT != 0,
         })
@@ -144,7 +169,6 @@ extern "C" fn rust_emit_state(
 
     frontend.puzzle = Some(NetPuzzle {
         dimensions: (width, height),
-        wrapping,
         tiles: tiles.chunks(width).map(|row| row.to_vec()).collect(),
         cursor: Cursor {
             position: (cur_x as usize, cur_y as usize),

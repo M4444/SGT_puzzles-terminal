@@ -23,7 +23,7 @@ pub fn render_board(
     draw_grid_lines(&mut canvas, dimensions);
     draw_wires_and_endpoints(&mut canvas, &puzzle.tiles, dimensions);
     draw_source(&mut canvas, puzzle.source);
-    draw_barriers(&mut canvas, dimensions, puzzle.wrapping);
+    draw_barriers(&mut canvas, &puzzle.tiles, dimensions);
     draw_locked(&mut canvas, &puzzle.tiles, dimensions, lock_style);
     draw_cursor(&mut canvas, puzzle.cursor, cursor_style);
     draw_frame(&mut canvas);
@@ -44,7 +44,6 @@ fn puzzle_relative_to_origin(puzzle: &NetPuzzle) -> Cow<'_, NetPuzzle> {
     let dimensions = puzzle.dimensions;
     Cow::Owned(NetPuzzle {
         dimensions,
-        wrapping: puzzle.wrapping,
         tiles: shift_tiles_by_origin(&puzzle.tiles, dimensions, origin),
         cursor: cursor_relative_to_origin(puzzle.cursor, dimensions, origin),
         source: relative_to_origin(puzzle.source, dimensions, origin),
@@ -780,17 +779,28 @@ fn draw_locked_junctions(canvas: &mut Canvas, tiles: &Tiles, (width, height): Gr
 }
 
 /// Draws barrier walls, fixed obstacles blocking a wire connection, in
-/// heavy weight across the border they occupy. A wrapping grid has no
-/// outer boundary, so this draws nothing; otherwise it forms the full
-/// outer boundary ring.
-fn draw_barriers(canvas: &mut Canvas, (width, height): GridDimensions, wrapping: bool) {
-    if wrapping {
-        return;
+/// heavy weight across the border they occupy. A non-wrapping grid
+/// carries barriers along its whole outer boundary, so that ring falls
+/// out of the same tile data as any interior wall.
+fn draw_barriers(canvas: &mut Canvas, tiles: &Tiles, (width, height): GridDimensions) {
+    for tile_y in 0..height {
+        for tile_x in 0..width {
+            let tile = (tile_x, tile_y);
+            let barriers = tiles[tile_y][tile_x].barriers;
+            if barriers.up {
+                draw_line(canvas, top_left(tile), top_right(tile), Weight::Heavy);
+            }
+            if barriers.down {
+                draw_line(canvas, bottom_left(tile), bottom_right(tile), Weight::Heavy);
+            }
+            if barriers.left {
+                draw_line(canvas, top_left(tile), bottom_left(tile), Weight::Heavy);
+            }
+            if barriers.right {
+                draw_line(canvas, top_right(tile), bottom_right(tile), Weight::Heavy);
+            }
+        }
     }
-    draw_line(canvas, top_left((0, 0)), top_left((width, 0)), Weight::Heavy);
-    draw_line(canvas, top_left((0, height)), top_left((width, height)), Weight::Heavy);
-    draw_line(canvas, top_left((0, 0)), top_left((0, height)), Weight::Heavy);
-    draw_line(canvas, top_left((width, 0)), top_left((width, height)), Weight::Heavy);
 }
 
 const FRAME_WEIGHT: Weight = Weight::Double;
@@ -1124,5 +1134,58 @@ mod tests {
 
         assert!(!canvas.is_reversed(top_left((1, 1))));
         assert!(!canvas.is_reversed(center_mid((1, 1))));
+    }
+
+    /// A tile's `right` barrier draws on the edge it names, and
+    /// nowhere else: the two corners it doesn't touch stay the plain
+    /// light cross `draw_grid_lines` left there.
+    #[test]
+    fn draw_barriers_draws_on_the_named_edge_only() {
+        let dimensions = (3, 3);
+        let mut tiles = vec![vec![crate::net::Tile::default(); 3]; 3];
+        tiles[1][1].barriers.right = true;
+
+        let mut canvas = Canvas::new(dimensions);
+        draw_grid_lines(&mut canvas, dimensions);
+        draw_barriers(&mut canvas, &tiles, dimensions);
+
+        assert_eq!(canvas.char_at(top_right((1, 1))), '╁');
+        assert_eq!(canvas.char_at(bottom_right((1, 1))), '╀');
+        assert_eq!(canvas.char_at(top_left((1, 1))), '┼');
+        assert_eq!(canvas.char_at(bottom_left((1, 1))), '┼');
+    }
+
+    /// A corner tile's two boundary barriers, `up` and `left`, both end
+    /// at its top-left corner: that corner becomes a solid heavy angle
+    /// rather than just one heavy arm, and the opposite corner, which
+    /// neither barrier reaches, stays the plain light cross.
+    #[test]
+    fn draw_barriers_combines_two_barriers_meeting_at_a_corner() {
+        let dimensions = (3, 3);
+        let mut tiles = vec![vec![crate::net::Tile::default(); 3]; 3];
+        tiles[0][0].barriers.up = true;
+        tiles[0][0].barriers.left = true;
+
+        let mut canvas = Canvas::new(dimensions);
+        draw_grid_lines(&mut canvas, dimensions);
+        draw_barriers(&mut canvas, &tiles, dimensions);
+
+        assert_eq!(canvas.char_at(top_left((0, 0))), '┏');
+        assert_eq!(canvas.char_at(bottom_right((0, 0))), '┼');
+    }
+
+    #[test]
+    fn draw_barriers_draws_nothing_when_no_tile_carries_one() {
+        let dimensions = (3, 3);
+        let tiles = vec![vec![crate::net::Tile::default(); 3]; 3];
+
+        let mut actual = Canvas::new(dimensions);
+        draw_grid_lines(&mut actual, dimensions);
+        draw_barriers(&mut actual, &tiles, dimensions);
+
+        let mut expected = Canvas::new(dimensions);
+        draw_grid_lines(&mut expected, dimensions);
+
+        assert_eq!(flatten_to_lines(&actual), flatten_to_lines(&expected));
     }
 }

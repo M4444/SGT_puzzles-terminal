@@ -836,7 +836,8 @@ struct drawing_api {
      */
     void (*emit_state)(drawing *dr, const game_state *state,
 		       const unsigned char *active, const unsigned char *tiles,
-		       bool wrapping, int width, int height,
+		       const unsigned char *barriers,
+		       int width, int height,
 		       int cur_x, int cur_y, bool cur_visible,
 		       int source_x, int source_y,
 		       int org_x, int org_y);
