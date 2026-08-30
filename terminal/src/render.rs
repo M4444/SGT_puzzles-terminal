@@ -256,6 +256,74 @@ impl From<(usize, usize)> for Coord {
     }
 }
 
+#[derive(Clone, Copy, Debug)]
+struct Size {
+    width: usize,
+    height: usize,
+}
+
+impl Size {
+    fn new(width: usize, height: usize) -> Size {
+        Size { width, height }
+    }
+}
+
+/// A rectangular area of cells.
+#[derive(Clone, Copy, Debug)]
+struct Rect {
+    top_left: Coord,
+    size: Size,
+}
+
+impl Rect {
+    fn new(top_left: Coord, size: Size) -> Rect {
+        Rect { top_left, size }
+    }
+
+    /// The rectangle spanning both corners, each of which it covers.
+    fn from_corners(top_left: Coord, bottom_right: Coord) -> Rect {
+        Rect::new(
+            top_left,
+            Size::new(bottom_right.x - top_left.x + 1, bottom_right.y - top_left.y + 1),
+        )
+    }
+
+    fn left(self) -> usize {
+        self.top_left.x
+    }
+
+    fn top(self) -> usize {
+        self.top_left.y
+    }
+
+    fn right(self) -> usize {
+        assert!(self.size.width > 0, "Rect::right() called on an empty rectangle");
+        self.top_left.x + self.size.width - 1
+    }
+
+    fn bottom(self) -> usize {
+        assert!(self.size.height > 0, "Rect::bottom() called on an empty rectangle");
+        self.top_left.y + self.size.height - 1
+    }
+
+    /// The cells the rectangle encloses, excluding its own border.
+    /// One too narrow or short to enclose anything gives an empty
+    /// rectangle.
+    fn interior(self) -> Rect {
+        Rect::new(
+            Coord::new(self.top_left.x + 1, self.top_left.y + 1),
+            Size::new(self.size.width.saturating_sub(2), self.size.height.saturating_sub(2)),
+        )
+    }
+
+    /// Every cell the rectangle covers, row by row.
+    fn coords(self) -> impl Iterator<Item = Coord> {
+        let Coord { x: left, y: top } = self.top_left;
+        let Size { width, height } = self.size;
+        (top..top + height).flat_map(move |y| (left..left + width).map(move |x| Coord::new(x, y)))
+    }
+}
+
 type Offset = (usize, usize);
 
 /// Gap between the grid lines and the frame: FRAME_MARGIN_X columns on each
@@ -381,21 +449,23 @@ fn bottom_right(tile_coord: TileCoord) -> Coord {
     tile_offset_to_coord(tile_coord, (TILE_WIDTH - 1, TILE_HEIGHT - 1))
 }
 
+fn tile_rect(tile: TileCoord) -> Rect {
+    Rect::from_corners(top_left(tile), bottom_right(tile))
+}
+
 /// The tile's three content coordinates.
 fn tile_content_coords(tile: TileCoord) -> impl Iterator<Item = Coord> {
-    (1..TILE_WIDTH - 1).map(move |offset_x| tile_offset_to_coord(tile, (offset_x, 1)))
+    tile_rect(tile).interior().coords()
 }
 
 /// The tile's entire footprint: all four of its borders and its content.
 fn tile_full_coords(tile: TileCoord) -> impl Iterator<Item = Coord> {
-    (0..TILE_HEIGHT).flat_map(move |offset_y| {
-        (0..TILE_WIDTH).map(move |offset_x| tile_offset_to_coord(tile, (offset_x, offset_y)))
-    })
+    tile_rect(tile).coords()
 }
 
 /// The tile's top border, excluding its left and right corners.
 fn top_border_middle(tile: TileCoord) -> impl Iterator<Item = Coord> {
-    (1..TILE_WIDTH - 1).map(move |offset_x| tile_offset_to_coord(tile, (offset_x, 0)))
+    Rect::new(tile_offset_to_coord(tile, (1, 0)), Size::new(TILE_WIDTH - 2, 1)).coords()
 }
 
 /// One screen coordinate: either an accumulated `Code` segment (resolved to
@@ -409,40 +479,42 @@ enum Cell {
 }
 
 /// A dense grid of `Cell`, one per screen coordinate, initialized to a
-/// blank segment (`BLANK`). Sized from the tile-grid dimensions passed to
-/// `new()`, not any fixed constant. Also stores which positions render in
-/// reverse video, and the frame's bounds.
+/// blank segment (`BLANK`). Sized from the tile-grid dimensions passed
+/// to `new()`.
 struct Canvas {
     cells: Vec<Vec<Cell>>,
     /// Which positions render in reverse video, independent of `cells`'
     /// own content.
     reversed: Vec<Vec<bool>>,
-    frame_left: usize,
-    frame_top: usize,
-    frame_right: usize,
-    frame_bottom: usize,
-    /// The status bar's row, always directly below `frame_bottom`
-    /// regardless of `CANVAS_MARGIN_Y`.
-    status_bar_row: usize,
+    frame: Rect,
+    /// Where the status bar's text begins: the frame's left edge, on
+    /// the row just below it.
+    status_bar_start: Coord,
 }
 
 impl Canvas {
-    fn new((tile_width, tile_height): GridDimensions) -> Canvas {
-        let board_width = (TILE_WIDTH - 1) * tile_width + 1;
-        let board_height = (TILE_HEIGHT - 1) * tile_height + 1;
-        let canvas_width = board_width + 2 * FRAME_MARGIN_X + 2 + 2 * CANVAS_MARGIN_X;
-        let frame_top = CANVAS_MARGIN_Y;
-        let frame_bottom = frame_top + board_height + 2 * FRAME_MARGIN_Y + 1;
-        let status_bar_row = frame_bottom + 1;
-        let canvas_height = status_bar_row + 1 + CANVAS_MARGIN_Y;
+    fn new((width, height): GridDimensions) -> Canvas {
+        assert!(width > 0 && height > 0, "Canvas::new() called with a zero-tile board");
+        let grid = Rect::from_corners(top_left((0, 0)), bottom_right((width - 1, height - 1)));
+
+        // The frame's border sits FRAME_MARGIN cells clear of the grid
+        // on every side.
+        let frame = Rect::from_corners(
+            Coord::new(grid.left() - FRAME_MARGIN_X - 1, grid.top() - FRAME_MARGIN_Y - 1),
+            Coord::new(grid.right() + FRAME_MARGIN_X + 1, grid.bottom() + FRAME_MARGIN_Y + 1),
+        );
+
+        let status_bar_start = Coord::new(frame.left(), frame.bottom() + 1);
+        let canvas_size = Size::new(
+            frame.right() + 1 + CANVAS_MARGIN_X,
+            status_bar_start.y + 1 + CANVAS_MARGIN_Y,
+        );
+
         Canvas {
-            cells: vec![vec![Cell::Segment(BLANK); canvas_width]; canvas_height],
-            reversed: vec![vec![false; canvas_width]; canvas_height],
-            frame_left: CANVAS_MARGIN_X,
-            frame_top,
-            frame_right: canvas_width - 1 - CANVAS_MARGIN_X,
-            frame_bottom,
-            status_bar_row,
+            cells: vec![vec![Cell::Segment(BLANK); canvas_size.width]; canvas_size.height],
+            reversed: vec![vec![false; canvas_size.width]; canvas_size.height],
+            frame,
+            status_bar_start,
         }
     }
 
@@ -650,11 +722,7 @@ fn draw_cursor(canvas: &mut Canvas, cursor: Cursor, style: CursorStyle) {
     }
     match style {
         CursorStyle::Outline => {
-            let tile = cursor.position;
-            draw_line(canvas, top_left(tile), top_right(tile), Weight::Heavy);
-            draw_line(canvas, bottom_left(tile), bottom_right(tile), Weight::Heavy);
-            draw_line(canvas, top_left(tile), bottom_left(tile), Weight::Heavy);
-            draw_line(canvas, top_right(tile), bottom_right(tile), Weight::Heavy);
+            draw_rect_outline(canvas, tile_rect(cursor.position), Weight::Heavy);
         }
         CursorStyle::ReverseTileCenter => {
             canvas.toggle_reversed_region(tile_content_coords(cursor.position));
@@ -803,25 +871,26 @@ fn draw_barriers(canvas: &mut Canvas, tiles: &Tiles, (width, height): GridDimens
     }
 }
 
+/// The outline runs through the centers of `Rect`'s outermost cells.
+fn draw_rect_outline(canvas: &mut Canvas, rect: Rect, weight: Weight) {
+    let (left, top, right, bottom) = (rect.left(), rect.top(), rect.right(), rect.bottom());
+    draw_line(canvas, (left, top), (right, top), weight);
+    draw_line(canvas, (left, bottom), (right, bottom), weight);
+    draw_line(canvas, (left, top), (left, bottom), weight);
+    draw_line(canvas, (right, top), (right, bottom), weight);
+}
+
 const FRAME_WEIGHT: Weight = Weight::Double;
 
 /// Draws the outer presentation frame, offset from the grid lines by
 /// FRAME_MARGIN_X/FRAME_MARGIN_Y and from the canvas edge by
 /// CANVAS_MARGIN_X/CANVAS_MARGIN_Y.
 fn draw_frame(canvas: &mut Canvas) {
-    let left = canvas.frame_left;
-    let top = canvas.frame_top;
-    let right = canvas.frame_right;
-    let bottom = canvas.frame_bottom;
-    draw_line(canvas, (left, top), (right, top), FRAME_WEIGHT);
-    draw_line(canvas, (left, bottom), (right, bottom), FRAME_WEIGHT);
-    draw_line(canvas, (left, top), (left, bottom), FRAME_WEIGHT);
-    draw_line(canvas, (right, top), (right, bottom), FRAME_WEIGHT);
+    draw_rect_outline(canvas, canvas.frame, FRAME_WEIGHT);
 }
 
-/// Draws `status` along `canvas.status_bar_row`, starting at `frame_left`.
 fn draw_status_bar(canvas: &mut Canvas, status: &str) {
-    canvas.draw_text((canvas.frame_left, canvas.status_bar_row), status);
+    canvas.draw_text(canvas.status_bar_start, status);
 }
 
 /// Flattens the drawn canvas into one line of text per screen row.
@@ -946,6 +1015,12 @@ mod tests {
         let canvas = Canvas::new((5, 5));
         assert_eq!(canvas.width(), 25);
         assert_eq!(canvas.height(), 14);
+    }
+
+    #[test]
+    #[should_panic(expected = "Canvas::new() called with a zero-tile board")]
+    fn canvas_new_panics_on_zero_tile_board() {
+        Canvas::new((0, 0));
     }
 
     #[test]
