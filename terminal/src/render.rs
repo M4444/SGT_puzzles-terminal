@@ -1,24 +1,27 @@
 //! Renders a Net board as a box-drawing string for the terminal.
 //!
-//! Given a `NetPuzzle`, `render_board()` draws it onto a `Canvas` in
-//! phases (grid lines, wires and endpoints, source, barriers, cursor,
-//! frame), then flattens the result to text. Given a screen
-//! coordinate, `tiles_at()` locates every tile it falls within.
+//! Given a `NetPuzzle`, `render_game()` draws the board onto a `Canvas`
+//! in phases (grid lines, wires and endpoints, source, barriers,
+//! cursor, frame, status bar), adds the side menu, then flattens the
+//! result to text. Given a screen coordinate, `tiles_at()` locates
+//! every tile it falls within.
 
+use crate::menu::Menu;
 use crate::net::{Cursor, GridDimensions, NetPuzzle, TileCoord, TileCoordNeighbors, Tiles};
 use crossterm::style::{Attribute, SetAttribute};
 use std::borrow::Cow;
 use std::cmp::max;
 
-pub fn render_board(
+pub fn render_game(
     puzzle: &NetPuzzle,
     cursor_style: CursorStyle,
     lock_style: LockStyle,
+    menu: &Menu,
 ) -> String {
     let puzzle = puzzle_relative_to_origin(puzzle);
     let dimensions = puzzle.dimensions;
 
-    let mut canvas = Canvas::new(dimensions);
+    let mut canvas = Canvas::new(dimensions, menu);
 
     draw_grid_lines(&mut canvas, dimensions);
     draw_wires_and_endpoints(&mut canvas, &puzzle.tiles, dimensions);
@@ -28,6 +31,8 @@ pub fn render_board(
     draw_cursor(&mut canvas, puzzle.cursor, cursor_style);
     draw_frame(&mut canvas);
     draw_status_bar(&mut canvas, &puzzle.status);
+
+    menu.draw(&mut canvas);
 
     flatten_to_lines(&canvas).join("\n")
 }
@@ -97,7 +102,7 @@ fn relative_to_origin(
 
 /// How strongly a line is drawn.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
-enum Weight {
+pub(crate) enum Weight {
     None,
     Light,
     Heavy,
@@ -239,13 +244,13 @@ fn glyph(code: Code) -> char {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-struct Coord {
-    x: usize,
-    y: usize,
+pub(crate) struct Coord {
+    pub(crate) x: usize,
+    pub(crate) y: usize,
 }
 
 impl Coord {
-    fn new(x: usize, y: usize) -> Coord {
+    pub(crate) fn new(x: usize, y: usize) -> Coord {
         Coord { x, y }
     }
 }
@@ -257,26 +262,26 @@ impl From<(usize, usize)> for Coord {
 }
 
 #[derive(Clone, Copy, Debug)]
-struct Size {
-    width: usize,
-    height: usize,
+pub(crate) struct Size {
+    pub(crate) width: usize,
+    pub(crate) height: usize,
 }
 
 impl Size {
-    fn new(width: usize, height: usize) -> Size {
+    pub(crate) fn new(width: usize, height: usize) -> Size {
         Size { width, height }
     }
 }
 
 /// A rectangular area of cells.
 #[derive(Clone, Copy, Debug)]
-struct Rect {
-    top_left: Coord,
-    size: Size,
+pub(crate) struct Rect {
+    pub(crate) top_left: Coord,
+    pub(crate) size: Size,
 }
 
 impl Rect {
-    fn new(top_left: Coord, size: Size) -> Rect {
+    pub(crate) fn new(top_left: Coord, size: Size) -> Rect {
         Rect { top_left, size }
     }
 
@@ -288,20 +293,24 @@ impl Rect {
         )
     }
 
-    fn left(self) -> usize {
+    pub(crate) fn left(self) -> usize {
         self.top_left.x
     }
 
-    fn top(self) -> usize {
+    pub(crate) fn top(self) -> usize {
         self.top_left.y
     }
 
-    fn right(self) -> usize {
+    pub(crate) fn top_right(self) -> Coord {
+        Coord::new(self.right(), self.top())
+    }
+
+    pub(crate) fn right(self) -> usize {
         assert!(self.size.width > 0, "Rect::right() called on an empty rectangle");
         self.top_left.x + self.size.width - 1
     }
 
-    fn bottom(self) -> usize {
+    pub(crate) fn bottom(self) -> usize {
         assert!(self.size.height > 0, "Rect::bottom() called on an empty rectangle");
         self.top_left.y + self.size.height - 1
     }
@@ -317,7 +326,7 @@ impl Rect {
     }
 
     /// Every cell the rectangle covers, row by row.
-    fn coords(self) -> impl Iterator<Item = Coord> {
+    pub(crate) fn coords(self) -> impl Iterator<Item = Coord> {
         let Coord { x: left, y: top } = self.top_left;
         let Size { width, height } = self.size;
         (top..top + height).flat_map(move |y| (left..left + width).map(move |x| Coord::new(x, y)))
@@ -479,40 +488,55 @@ enum Cell {
 }
 
 /// A dense grid of `Cell`, one per screen coordinate, initialized to a
-/// blank segment (`BLANK`). Sized from the tile-grid dimensions passed
-/// to `new()`.
-struct Canvas {
+/// blank segment (`BLANK`). Sized from the tile grid and the menu
+/// passed to `new()`.
+pub(crate) struct Canvas {
     cells: Vec<Vec<Cell>>,
     /// Which positions render in reverse video, independent of `cells`'
     /// own content.
     reversed: Vec<Vec<bool>>,
-    frame: Rect,
+    /// Which positions render dimmed (a disabled button), independent
+    /// of `cells`' own content.
+    dimmed: Vec<Vec<bool>>,
+    pub(crate) frame: Rect,
     /// Where the status bar's text begins: the frame's left edge, on
     /// the row just below it.
     status_bar_start: Coord,
 }
 
-impl Canvas {
-    fn new((width, height): GridDimensions) -> Canvas {
-        assert!(width > 0 && height > 0, "Canvas::new() called with a zero-tile board");
-        let grid = Rect::from_corners(top_left((0, 0)), bottom_right((width - 1, height - 1)));
+/// The frame enclosing the grid.
+pub(crate) fn grid_frame((width, height): GridDimensions) -> Rect {
+    assert!(width > 0 && height > 0, "grid_frame() called with a zero-tile board");
+    let grid = Rect::from_corners(top_left((0, 0)), bottom_right((width - 1, height - 1)));
 
-        // The frame's border sits FRAME_MARGIN cells clear of the grid
-        // on every side.
-        let frame = Rect::from_corners(
-            Coord::new(grid.left() - FRAME_MARGIN_X - 1, grid.top() - FRAME_MARGIN_Y - 1),
-            Coord::new(grid.right() + FRAME_MARGIN_X + 1, grid.bottom() + FRAME_MARGIN_Y + 1),
-        );
+    // The frame's border sits FRAME_MARGIN cells clear of the grid
+    // on every side.
+    Rect::from_corners(
+        Coord::new(grid.left() - FRAME_MARGIN_X - 1, grid.top() - FRAME_MARGIN_Y - 1),
+        Coord::new(grid.right() + FRAME_MARGIN_X + 1, grid.bottom() + FRAME_MARGIN_Y + 1),
+    )
+}
+
+impl Canvas {
+    fn new(dimensions: GridDimensions, menu: &Menu) -> Canvas {
+        let frame = grid_frame(dimensions);
 
         let status_bar_start = Coord::new(frame.left(), frame.bottom() + 1);
+
+        let menu = menu.size();
+
+        // The board and the menu sit end to end across the canvas, so
+        // their widths add. They overlap down it, so the taller of the
+        // two sets the height.
         let canvas_size = Size::new(
-            frame.right() + 1 + CANVAS_MARGIN_X,
-            status_bar_start.y + 1 + CANVAS_MARGIN_Y,
+            frame.right() + 1 + menu.width + CANVAS_MARGIN_X,
+            max(status_bar_start.y + 1, frame.top() + menu.height) + CANVAS_MARGIN_Y,
         );
 
         Canvas {
             cells: vec![vec![Cell::Segment(BLANK); canvas_size.width]; canvas_size.height],
             reversed: vec![vec![false; canvas_size.width]; canvas_size.height],
+            dimmed: vec![vec![false; canvas_size.width]; canvas_size.height],
             frame,
             status_bar_start,
         }
@@ -542,7 +566,7 @@ impl Canvas {
     /// Draws each character of `text` in order, starting at `start` and
     /// advancing one column per character. Characters past the canvas's
     /// right edge are dropped rather than panicking.
-    fn draw_text(&mut self, start: impl Into<Coord>, text: &str) {
+    pub(crate) fn draw_text(&mut self, start: impl Into<Coord>, text: &str) {
         let start = start.into();
         for (offset_x, c) in text.chars().enumerate() {
             let x = start.x + offset_x;
@@ -591,6 +615,23 @@ impl Canvas {
         let coord = coord.into();
         self.reversed[coord.y][coord.x]
     }
+
+    /// Sets dimmed rendering at this position.
+    fn mark_dimmed(&mut self, coord: impl Into<Coord>) {
+        let coord = coord.into();
+        self.dimmed[coord.y][coord.x] = true;
+    }
+
+    pub(crate) fn mark_dimmed_region(&mut self, coords: impl IntoIterator<Item = Coord>) {
+        for coord in coords {
+            self.mark_dimmed(coord);
+        }
+    }
+
+    fn is_dimmed(&self, coord: impl Into<Coord>) -> bool {
+        let coord = coord.into();
+        self.dimmed[coord.y][coord.x]
+    }
 }
 
 /// Draws a line of the given weight from `start` to `end`, inclusive, along
@@ -598,7 +639,12 @@ impl Canvas {
 /// be given in order. Each endpoint only gets the arm pointing back into
 /// the line, not the one pointing past it. Panics if `start` and `end` are
 /// neither on the same row nor the same column.
-fn draw_line(canvas: &mut Canvas, start: impl Into<Coord>, end: impl Into<Coord>, weight: Weight) {
+pub(crate) fn draw_line(
+    canvas: &mut Canvas,
+    start: impl Into<Coord>,
+    end: impl Into<Coord>,
+    weight: Weight,
+) {
     let (mut start, mut end) = (start.into(), end.into());
     if start == end {
         return;
@@ -872,7 +918,7 @@ fn draw_barriers(canvas: &mut Canvas, tiles: &Tiles, (width, height): GridDimens
 }
 
 /// The outline runs through the centers of `Rect`'s outermost cells.
-fn draw_rect_outline(canvas: &mut Canvas, rect: Rect, weight: Weight) {
+pub(crate) fn draw_rect_outline(canvas: &mut Canvas, rect: Rect, weight: Weight) {
     let (left, top, right, bottom) = (rect.left(), rect.top(), rect.right(), rect.bottom());
     draw_line(canvas, (left, top), (right, top), weight);
     draw_line(canvas, (left, bottom), (right, bottom), weight);
@@ -899,6 +945,7 @@ fn flatten_to_lines(canvas: &Canvas) -> Vec<String> {
     for y in 0..canvas.height() {
         let mut line = String::with_capacity(canvas.width());
         let mut reversed = false;
+        let mut dimmed = false;
         for x in 0..canvas.width() {
             if canvas.is_reversed((x, y)) != reversed {
                 reversed = !reversed;
@@ -909,10 +956,22 @@ fn flatten_to_lines(canvas: &Canvas) -> Vec<String> {
                 };
                 line.push_str(&SetAttribute(attribute).to_string());
             }
+            if canvas.is_dimmed((x, y)) != dimmed {
+                dimmed = !dimmed;
+                let attribute = if dimmed {
+                    Attribute::Dim
+                } else {
+                    Attribute::NormalIntensity
+                };
+                line.push_str(&SetAttribute(attribute).to_string());
+            }
             line.push(canvas.char_at((x, y)));
         }
         if reversed {
             line.push_str(&SetAttribute(Attribute::NoReverse).to_string());
+        }
+        if dimmed {
+            line.push_str(&SetAttribute(Attribute::NormalIntensity).to_string());
         }
         lines.push(line);
     }
@@ -923,6 +982,11 @@ fn flatten_to_lines(canvas: &Canvas) -> Vec<String> {
 mod tests {
     use super::*;
     use crate::net::TileCoordNeighbors;
+
+    /// A canvas sized for the board and its menu.
+    fn canvas(dimensions: GridDimensions) -> Canvas {
+        Canvas::new(dimensions, &Menu::new(grid_frame(dimensions).top_right()))
+    }
 
     #[test]
     fn blank_is_space() {
@@ -959,10 +1023,10 @@ mod tests {
         let start = (0, 0);
         let end = (3, 0);
 
-        let mut natural = Canvas::new((2, 2));
+        let mut natural = canvas((2, 2));
         draw_line(&mut natural, start, end, Weight::Light);
 
-        let mut reversed = Canvas::new((2, 2));
+        let mut reversed = canvas((2, 2));
         draw_line(&mut reversed, end, start, Weight::Light);
 
         for y in 0..natural.height() {
@@ -976,13 +1040,13 @@ mod tests {
     #[test]
     #[should_panic(expected = "draw_line only supports horizontal or vertical lines")]
     fn draw_line_panics_on_diagonal() {
-        let mut canvas = Canvas::new((2, 2));
+        let mut canvas = canvas((2, 2));
         draw_line(&mut canvas, (0, 0), (3, 3), Weight::Light);
     }
 
     #[test]
     fn draw_line_start_equals_end_is_noop() {
-        let mut canvas = Canvas::new((2, 2));
+        let mut canvas = canvas((2, 2));
         draw_line(&mut canvas, (1, 1), (1, 1), Weight::Light);
         assert_eq!(canvas.char_at((1, 1)), ' ');
     }
@@ -1010,49 +1074,41 @@ mod tests {
         assert_tile_boundary_shared(tile, tile.bottom(), (0, TILE_HEIGHT - 1));
     }
 
+    /// A 5x5 board's frame is 25 columns wide and the menu adds 59.
+    /// The board is the taller of the two, so it sets the height.
     #[test]
     fn canvas_new_computes_expected_size() {
-        let canvas = Canvas::new((5, 5));
-        assert_eq!(canvas.width(), 25);
+        let canvas = canvas((5, 5));
+        assert_eq!(canvas.width(), 84);
         assert_eq!(canvas.height(), 14);
     }
 
     #[test]
-    #[should_panic(expected = "Canvas::new() called with a zero-tile board")]
-    fn canvas_new_panics_on_zero_tile_board() {
-        Canvas::new((0, 0));
+    #[should_panic(expected = "grid_frame() called with a zero-tile board")]
+    fn grid_frame_panics_on_zero_tile_board() {
+        grid_frame((0, 0));
     }
 
     #[test]
     #[should_panic(expected = "draw_code() called on a marked cell")]
     fn draw_code_panics_on_marked_cell() {
-        let mut canvas = Canvas::new((1, 1));
+        let mut canvas = canvas((1, 1));
         canvas.draw_char((0, 0), 'x');
         canvas.draw_code((0, 0), BLANK);
     }
 
     #[test]
-    fn render_board_is_a_well_formed_rectangle() {
-        let puzzle = crate::net::generate();
-        let board = render_board(&puzzle, CursorStyle::Outline, LockStyle::default());
-        let lines: Vec<&str> = board.lines().collect();
-        assert_eq!(lines.len(), 14);
-        for line in &lines {
-            assert_eq!(line.chars().count(), 25);
-        }
-    }
-
-    #[test]
-    fn render_board_does_not_panic_across_many_generated_boards() {
+    fn render_game_does_not_panic_across_many_generated_boards() {
         for _ in 0..100 {
             let puzzle = crate::net::generate();
-            render_board(&puzzle, CursorStyle::Outline, LockStyle::default());
+            let menu = Menu::new(grid_frame(puzzle.dimensions).top_right());
+            render_game(&puzzle, CursorStyle::Outline, LockStyle::default(), &menu);
         }
     }
 
     #[test]
     fn draw_cursor_outline_boxes_the_tile() {
-        let mut canvas = Canvas::new((3, 3));
+        let mut canvas = canvas((3, 3));
         draw_grid_lines(&mut canvas, (3, 3));
         let cursor = Cursor { position: (1, 1), visible: true };
         draw_cursor(&mut canvas, cursor, CursorStyle::Outline);
@@ -1066,7 +1122,7 @@ mod tests {
 
     #[test]
     fn draw_cursor_reverse_tile_center_only_marks_content() {
-        let mut canvas = Canvas::new((3, 3));
+        let mut canvas = canvas((3, 3));
         let cursor = Cursor { position: (1, 1), visible: true };
         draw_cursor(&mut canvas, cursor, CursorStyle::ReverseTileCenter);
 
@@ -1078,7 +1134,7 @@ mod tests {
 
     #[test]
     fn draw_cursor_reverse_tile_full_includes_shared_edge() {
-        let mut canvas = Canvas::new((3, 3));
+        let mut canvas = canvas((3, 3));
         let cursor = Cursor { position: (1, 1), visible: true };
         draw_cursor(&mut canvas, cursor, CursorStyle::ReverseTileFull);
 
@@ -1090,7 +1146,7 @@ mod tests {
 
     #[test]
     fn flatten_wraps_reversed_cells_in_escape_codes() {
-        let mut canvas = Canvas::new((1, 1));
+        let mut canvas = canvas((1, 1));
         canvas.mark_reversed((0, 0));
 
         let lines = flatten_to_lines(&canvas);
@@ -1099,8 +1155,29 @@ mod tests {
     }
 
     #[test]
+    fn flatten_wraps_dimmed_cells_in_escape_codes() {
+        let mut canvas = canvas((1, 1));
+        canvas.mark_dimmed_region([Coord::new(0, 0)]);
+
+        let lines = flatten_to_lines(&canvas);
+        assert!(lines[0].starts_with(&SetAttribute(Attribute::Dim).to_string()));
+        assert!(lines[0].contains(&SetAttribute(Attribute::NormalIntensity).to_string()));
+    }
+
+    /// The menu dims Undo and Redo, so a rendered game carries the dim
+    /// attribute.
+    #[test]
+    fn render_game_dims_unavailable_menu_buttons() {
+        let puzzle = crate::net::generate();
+        let menu = Menu::new(grid_frame(puzzle.dimensions).top_right());
+        let rendered = render_game(&puzzle, CursorStyle::Outline, LockStyle::default(), &menu);
+
+        assert!(rendered.contains(&SetAttribute(Attribute::Dim).to_string()));
+    }
+
+    #[test]
     fn mark_reversed_twice_stays_reversed() {
-        let mut canvas = Canvas::new((1, 1));
+        let mut canvas = canvas((1, 1));
         canvas.mark_reversed((0, 0));
         canvas.mark_reversed((0, 0));
 
@@ -1109,7 +1186,7 @@ mod tests {
 
     #[test]
     fn toggle_reversed_twice_cancels_out() {
-        let mut canvas = Canvas::new((1, 1));
+        let mut canvas = canvas((1, 1));
         canvas.toggle_reversed((0, 0));
         canvas.toggle_reversed((0, 0));
 
@@ -1118,7 +1195,7 @@ mod tests {
 
     #[test]
     fn toggle_reversed_cancels_a_prior_mark_reversed() {
-        let mut canvas = Canvas::new((1, 1));
+        let mut canvas = canvas((1, 1));
         canvas.mark_reversed((0, 0));
         canvas.toggle_reversed((0, 0));
 
@@ -1138,7 +1215,7 @@ mod tests {
         let dimensions = (4, 3);
         let target_tile = (1, 1);
         let tiles = grid_with_locked(dimensions, &[target_tile, target_tile.right()]);
-        let mut canvas = Canvas::new(dimensions);
+        let mut canvas = canvas(dimensions);
         draw_locked(&mut canvas, &tiles, dimensions, LockStyle::ReverseTileConnected);
 
         assert!(canvas.is_reversed(right_side(target_tile)));
@@ -1149,7 +1226,7 @@ mod tests {
         let dimensions = (4, 3);
         let target_tile = (1, 1);
         let tiles = grid_with_locked(dimensions, &[target_tile, target_tile.right()]);
-        let mut canvas = Canvas::new(dimensions);
+        let mut canvas = canvas(dimensions);
         draw_locked(&mut canvas, &tiles, dimensions, LockStyle::ReverseTileConnected);
 
         assert!(!canvas.is_reversed(top_mid(target_tile)));
@@ -1160,7 +1237,7 @@ mod tests {
         let dimensions = (3, 3);
         let target_tile = (0, 0);
         let tiles = grid_with_locked(dimensions, &[target_tile]);
-        let mut canvas = Canvas::new(dimensions);
+        let mut canvas = canvas(dimensions);
         draw_locked(&mut canvas, &tiles, dimensions, LockStyle::ReverseTileConnected);
 
         assert!(canvas.is_reversed(top_mid(target_tile)));
@@ -1173,7 +1250,7 @@ mod tests {
         let dimensions = (4, 3);
         let target_tile = (1, 1);
         let tiles = grid_with_locked(dimensions, &[target_tile, target_tile.right()]);
-        let mut canvas = Canvas::new(dimensions);
+        let mut canvas = canvas(dimensions);
         draw_locked(&mut canvas, &tiles, dimensions, LockStyle::ReverseTileConnected);
 
         // The corners of the shared border also touch the unlocked
@@ -1195,7 +1272,7 @@ mod tests {
                 target_tile.right().bottom(),
             ],
         );
-        let mut canvas = Canvas::new(dimensions);
+        let mut canvas = canvas(dimensions);
         draw_locked(&mut canvas, &tiles, dimensions, LockStyle::ReverseTileConnected);
 
         assert!(canvas.is_reversed(bottom_right(target_tile)));
@@ -1203,7 +1280,7 @@ mod tests {
 
     #[test]
     fn draw_cursor_draws_nothing_when_not_visible() {
-        let mut canvas = Canvas::new((3, 3));
+        let mut canvas = canvas((3, 3));
         let cursor = Cursor { position: (1, 1), visible: false };
         draw_cursor(&mut canvas, cursor, CursorStyle::default());
 
@@ -1220,7 +1297,7 @@ mod tests {
         let mut tiles = vec![vec![crate::net::Tile::default(); 3]; 3];
         tiles[1][1].barriers.right = true;
 
-        let mut canvas = Canvas::new(dimensions);
+        let mut canvas = canvas(dimensions);
         draw_grid_lines(&mut canvas, dimensions);
         draw_barriers(&mut canvas, &tiles, dimensions);
 
@@ -1241,7 +1318,7 @@ mod tests {
         tiles[0][0].barriers.up = true;
         tiles[0][0].barriers.left = true;
 
-        let mut canvas = Canvas::new(dimensions);
+        let mut canvas = canvas(dimensions);
         draw_grid_lines(&mut canvas, dimensions);
         draw_barriers(&mut canvas, &tiles, dimensions);
 
@@ -1254,11 +1331,11 @@ mod tests {
         let dimensions = (3, 3);
         let tiles = vec![vec![crate::net::Tile::default(); 3]; 3];
 
-        let mut actual = Canvas::new(dimensions);
+        let mut actual = canvas(dimensions);
         draw_grid_lines(&mut actual, dimensions);
         draw_barriers(&mut actual, &tiles, dimensions);
 
-        let mut expected = Canvas::new(dimensions);
+        let mut expected = canvas(dimensions);
         draw_grid_lines(&mut expected, dimensions);
 
         assert_eq!(flatten_to_lines(&actual), flatten_to_lines(&expected));

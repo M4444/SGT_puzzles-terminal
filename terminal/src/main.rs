@@ -1,4 +1,5 @@
 mod ffi;
+mod menu;
 mod net;
 mod render;
 
@@ -46,9 +47,11 @@ fn main() {
     let lock_style = render::LockStyle::default();
 
     loop {
-        let board = render::render_board(session.puzzle(), cursor_style, lock_style);
+        let dimensions = session.puzzle().dimensions;
+        let menu = menu::Menu::new(render::grid_frame(dimensions).top_right());
+        let output = render::render_game(session.puzzle(), cursor_style, lock_style, &menu);
         execute!(stdout(), Clear(ClearType::All), MoveTo(0, 0)).ok();
-        print!("{}\r\n", board.replace('\n', "\r\n"));
+        print!("{}\r\n", output.replace('\n', "\r\n"));
         stdout().flush().ok();
 
         let event = event::read().expect("failed to read input event");
@@ -83,7 +86,7 @@ fn main() {
             };
             if let Some(button) = button {
                 let position = (mouse_event.column as usize, mouse_event.row as usize);
-                let possible_tiles = render::tiles_at(position, session.puzzle().dimensions);
+                let possible_tiles = render::tiles_at(position, dimensions);
                 if let Some(tile) = resolve_tile(&possible_tiles, button, &session) {
                     if !session.process_click(tile, button) {
                         break;
