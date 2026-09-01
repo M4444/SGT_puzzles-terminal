@@ -3,16 +3,17 @@
 
 use crate::render::{draw_line, draw_rect_outline, Canvas, Coord, Rect, Size, Weight};
 
-/// The menu's buttons.
+/// The menu's buttons, and what the game allows right now.
 pub struct Menu {
     buttons: Vec<Button>,
+    state: MenuState,
 }
 
 impl Menu {
     /// Places the menu beside the board, its buttons left to right.
-    /// Drawing and sizing both read the rectangles fixed here, so they
-    /// can't disagree about where a button sits.
-    pub(crate) fn new(board_top_right: Coord) -> Menu {
+    /// Drawing, sizing and hit-testing all read the rectangles fixed
+    /// here, so they can't disagree about where a button sits.
+    pub(crate) fn new(board_top_right: Coord, state: MenuState) -> Menu {
         let start = Coord::new(board_top_right.x + 1 + MENU_MARGIN, board_top_right.y);
         let mut x = start.x;
         let buttons = COMMON_ACTIONS
@@ -24,15 +25,26 @@ impl Menu {
                 Button { action: entry.action, label: entry.label, rect }
             })
             .collect();
-        Menu { buttons }
+        Menu { buttons, state }
     }
 
     /// Draws the divider, then the buttons.
     pub(crate) fn draw(&self, canvas: &mut Canvas) {
         draw_divider(canvas);
         for button in &self.buttons {
-            draw_button(canvas, button);
+            draw_button(canvas, button, self.state);
         }
+    }
+
+    /// Which action, if any, a screen coordinate falls on. A dimmed
+    /// button still answers, since the mid-end ignores an action it
+    /// can't take.
+    pub(crate) fn action_at(&self, position: impl Into<Coord>) -> Option<Action> {
+        let position = position.into();
+        self.buttons
+            .iter()
+            .find(|button| button.rect.contains(position))
+            .map(|button| button.action)
     }
 
     /// The space the menu adds beside the board: its margin and its
@@ -49,7 +61,7 @@ impl Menu {
 
 /// What a button does.
 #[derive(Clone, Copy, Debug)]
-enum Action {
+pub enum Action {
     NewGame,
     Restart,
     Undo,
@@ -112,29 +124,41 @@ fn draw_divider(canvas: &mut Canvas) {
 
 /// Draws one button in its own rectangle, dimmed if its action can't
 /// be taken.
-fn draw_button(canvas: &mut Canvas, button: &Button) {
+fn draw_button(canvas: &mut Canvas, button: &Button, state: MenuState) {
     let rect = button.rect;
     draw_rect_outline(canvas, rect, Weight::Light);
     canvas.draw_text((rect.left() + 1, rect.top() + 1), &format!(" {} ", button.label));
-    if !available(button.action) {
+    if !available(button.action, state) {
         canvas.mark_dimmed_region(rect.coords());
     }
 }
 
-/// Whether an action can be taken right now. Undo and Redo are the
-/// only ones that ever vary, and both are unavailable on a freshly
-/// generated game.
-fn available(action: Action) -> bool {
-    !matches!(action, Action::Undo | Action::Redo)
+/// What the menu needs from the game to draw itself: the actions whose
+/// availability depends on the move history.
+#[derive(Clone, Copy, Debug)]
+pub struct MenuState {
+    pub can_undo: bool,
+    pub can_redo: bool,
+}
+
+/// Whether an action can be taken right now. Every action but Undo and
+/// Redo is always available.
+fn available(action: Action, state: MenuState) -> bool {
+    match action {
+        Action::Undo => state.can_undo,
+        Action::Redo => state.can_redo,
+        _ => true,
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    /// Placed against a 5x5 board's frame.
+    /// Placed against a 5x5 board's frame, with nothing dimmed.
     fn placed() -> Menu {
-        Menu::new(crate::render::grid_frame((5, 5)).top_right())
+        let state = MenuState { can_undo: true, can_redo: true };
+        Menu::new(crate::render::grid_frame((5, 5)).top_right(), state)
     }
 
     #[test]
@@ -150,14 +174,45 @@ mod tests {
         assert_eq!(placed().size().height, 3);
     }
 
-    #[test]
-    fn only_undo_and_redo_are_unavailable() {
-        let unavailable: Vec<&str> = COMMON_ACTIONS
+    fn unavailable_labels(state: MenuState) -> Vec<&'static str> {
+        COMMON_ACTIONS
             .iter()
-            .filter(|entry| !available(entry.action))
+            .filter(|entry| !available(entry.action, state))
             .map(|entry| entry.label)
-            .collect();
+            .collect()
+    }
 
-        assert_eq!(unavailable, ["Undo", "Redo"]);
+    #[test]
+    fn only_undo_and_redo_follow_the_game_state() {
+        let neither = MenuState { can_undo: false, can_redo: false };
+        assert_eq!(unavailable_labels(neither), ["Undo", "Redo"]);
+
+        let both = MenuState { can_undo: true, can_redo: true };
+        assert!(unavailable_labels(both).is_empty());
+    }
+
+    #[test]
+    fn undo_and_redo_are_independent() {
+        let undo_only = MenuState { can_undo: true, can_redo: false };
+        assert_eq!(unavailable_labels(undo_only), ["Redo"]);
+    }
+
+    /// Where the buttons are placed is where clicks find them. On a
+    /// 5x5 board the frame ends at column 24, so the row starts at 28
+    /// and the six buttons run to column 83.
+    #[test]
+    fn a_click_lands_on_the_button_it_is_over() {
+        let menu = placed();
+        let find = |x, y| menu.action_at((x, y));
+
+        assert!(matches!(find(28, 0), Some(Action::NewGame)));
+        assert!(matches!(find(39, 0), Some(Action::NewGame)));
+        assert!(matches!(find(40, 0), Some(Action::Restart)));
+        assert!(matches!(find(83, 2), Some(Action::Quit)));
+
+        // Left of the row, past its end, and below its last row.
+        assert!(find(27, 0).is_none());
+        assert!(find(84, 0).is_none());
+        assert!(find(28, 3).is_none());
     }
 }

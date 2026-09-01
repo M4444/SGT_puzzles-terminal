@@ -41,6 +41,9 @@ extern "C" {
         drhandle: *mut c_void,
     ) -> *mut RawMidend;
     fn midend_new_game(me: *mut RawMidend);
+    fn midend_restart_game(me: *mut RawMidend);
+    fn midend_can_undo(me: *mut RawMidend) -> bool;
+    fn midend_can_redo(me: *mut RawMidend) -> bool;
     fn midend_redraw(me: *mut RawMidend);
     fn midend_free(me: *mut RawMidend);
     fn midend_process_key(me: *mut RawMidend, x: c_int, y: c_int, button: c_int) -> c_int;
@@ -111,6 +114,20 @@ impl Midend {
     pub(crate) fn new_game(&self) {
         unsafe { midend_new_game(self.raw.as_ptr()) };
         self.fix_tilesize();
+    }
+
+    /// Returns the current puzzle to its starting position, keeping the
+    /// move history so the restart itself can be undone.
+    pub(crate) fn restart_game(&self) {
+        unsafe { midend_restart_game(self.raw.as_ptr()) };
+    }
+
+    pub(crate) fn can_undo(&self) -> bool {
+        unsafe { midend_can_undo(self.raw.as_ptr()) }
+    }
+
+    pub(crate) fn can_redo(&self) -> bool {
+        unsafe { midend_can_redo(self.raw.as_ptr()) }
     }
 
     /// Triggers the backend's own redraw, which is where `emit_state`

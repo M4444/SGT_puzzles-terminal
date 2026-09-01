@@ -325,6 +325,15 @@ impl Rect {
         )
     }
 
+    /// Whether the coordinate falls inside the rectangle. An empty one
+    /// contains nothing.
+    pub(crate) fn contains(self, coord: Coord) -> bool {
+        coord.x >= self.left()
+            && coord.x - self.left() < self.size.width
+            && coord.y >= self.top()
+            && coord.y - self.top() < self.size.height
+    }
+
     /// Every cell the rectangle covers, row by row.
     pub(crate) fn coords(self) -> impl Iterator<Item = Coord> {
         let Coord { x: left, y: top } = self.top_left;
@@ -981,11 +990,18 @@ fn flatten_to_lines(canvas: &Canvas) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::menu::MenuState;
     use crate::net::TileCoordNeighbors;
+
+    /// A menu beside a board of the given size, with nothing dimmed.
+    fn menu(dimensions: GridDimensions) -> Menu {
+        let state = MenuState { can_undo: true, can_redo: true };
+        Menu::new(grid_frame(dimensions).top_right(), state)
+    }
 
     /// A canvas sized for the board and its menu.
     fn canvas(dimensions: GridDimensions) -> Canvas {
-        Canvas::new(dimensions, &Menu::new(grid_frame(dimensions).top_right()))
+        Canvas::new(dimensions, &menu(dimensions))
     }
 
     #[test]
@@ -1101,7 +1117,7 @@ mod tests {
     fn render_game_does_not_panic_across_many_generated_boards() {
         for _ in 0..100 {
             let puzzle = crate::net::generate();
-            let menu = Menu::new(grid_frame(puzzle.dimensions).top_right());
+            let menu = menu(puzzle.dimensions);
             render_game(&puzzle, CursorStyle::Outline, LockStyle::default(), &menu);
         }
     }
@@ -1164,15 +1180,23 @@ mod tests {
         assert!(lines[0].contains(&SetAttribute(Attribute::NormalIntensity).to_string()));
     }
 
-    /// The menu dims Undo and Redo, so a rendered game carries the dim
-    /// attribute.
+    /// An unavailable action's button is dimmed, so a rendered game
+    /// carries the dim attribute only when one of them is unavailable.
     #[test]
     fn render_game_dims_unavailable_menu_buttons() {
         let puzzle = crate::net::generate();
-        let menu = Menu::new(grid_frame(puzzle.dimensions).top_right());
-        let rendered = render_game(&puzzle, CursorStyle::Outline, LockStyle::default(), &menu);
+        let dim = SetAttribute(Attribute::Dim).to_string();
+        let corner = grid_frame(puzzle.dimensions).top_right();
+        let render = |state| {
+            let menu = Menu::new(corner, state);
+            render_game(&puzzle, CursorStyle::Outline, LockStyle::default(), &menu)
+        };
 
-        assert!(rendered.contains(&SetAttribute(Attribute::Dim).to_string()));
+        let fresh = MenuState { can_undo: false, can_redo: false };
+        let mid_game = MenuState { can_undo: true, can_redo: true };
+
+        assert!(render(fresh).contains(&dim));
+        assert!(!render(mid_game).contains(&dim));
     }
 
     #[test]

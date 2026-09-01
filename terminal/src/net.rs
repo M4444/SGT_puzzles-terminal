@@ -235,6 +235,22 @@ impl Session {
         self.midend.process_key(button)
     }
 
+    /// Returns the puzzle to its starting position. Unlike the other
+    /// actions this has no keystroke of its own, so it goes straight
+    /// to the mid-end and needs its own redraw.
+    pub fn restart(&mut self) {
+        self.midend.restart_game();
+        self.midend.redraw();
+    }
+
+    pub fn can_undo(&self) -> bool {
+        self.midend.can_undo()
+    }
+
+    pub fn can_redo(&self) -> bool {
+        self.midend.can_redo()
+    }
+
     /// Sends one mouse button press on the given tile, converting it
     /// into the pixel coordinates net.c's own click handling expects.
     /// Returns `false` if it signalled quit.

@@ -22,6 +22,13 @@ const CURSOR_SELECT: i32 = 0x020D;
 const MOD_CTRL: i32 = 0x1000;
 const MOD_SHFT: i32 = 0x2000;
 
+/// Key codes for the menu's actions. Restart has none of its own.
+const UI_QUIT: i32 = 0x0210;
+const UI_NEWGAME: i32 = 0x0211;
+const UI_SOLVE: i32 = 0x0212;
+const UI_UNDO: i32 = 0x0213;
+const UI_REDO: i32 = 0x0214;
+
 /// Raw mouse button codes from puzzles.h's enum.
 const LEFT_BUTTON: i32 = 0x0200;
 const MIDDLE_BUTTON: i32 = 0x0201;
@@ -48,7 +55,11 @@ fn main() {
 
     loop {
         let dimensions = session.puzzle().dimensions;
-        let menu = menu::Menu::new(render::grid_frame(dimensions).top_right());
+        let state = menu::MenuState {
+            can_undo: session.can_undo(),
+            can_redo: session.can_redo(),
+        };
+        let menu = menu::Menu::new(render::grid_frame(dimensions).top_right(), state);
         let output = render::render_game(session.puzzle(), cursor_style, lock_style, &menu);
         execute!(stdout(), Clear(ClearType::All), MoveTo(0, 0)).ok();
         print!("{}\r\n", output.replace('\n', "\r\n"));
@@ -86,13 +97,39 @@ fn main() {
             };
             if let Some(button) = button {
                 let position = (mouse_event.column as usize, mouse_event.row as usize);
-                let possible_tiles = render::tiles_at(position, dimensions);
-                if let Some(tile) = resolve_tile(&possible_tiles, button, &session) {
-                    if !session.process_click(tile, button) {
+                let action = if button == LEFT_BUTTON {
+                    menu.action_at(position)
+                } else {
+                    None
+                };
+                if let Some(action) = action {
+                    if !take_action(action, &mut session) {
                         break;
+                    }
+                } else {
+                    let possible_tiles = render::tiles_at(position, dimensions);
+                    if let Some(tile) = resolve_tile(&possible_tiles, button, &session) {
+                        if !session.process_click(tile, button) {
+                            break;
+                        }
                     }
                 }
             }
+        }
+    }
+}
+
+/// Carries out a menu action. Returns `false` if it signalled quit.
+fn take_action(action: menu::Action, session: &mut Session) -> bool {
+    match action {
+        menu::Action::NewGame => session.process_key(UI_NEWGAME),
+        menu::Action::Undo => session.process_key(UI_UNDO),
+        menu::Action::Redo => session.process_key(UI_REDO),
+        menu::Action::Solve => session.process_key(UI_SOLVE),
+        menu::Action::Quit => session.process_key(UI_QUIT),
+        menu::Action::Restart => {
+            session.restart();
+            true
         }
     }
 }
