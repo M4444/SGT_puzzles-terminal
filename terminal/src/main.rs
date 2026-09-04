@@ -52,15 +52,14 @@ fn main() {
     let mut session = net::Session::new();
     let cursor_style = render::CursorStyle::default();
     let lock_style = render::LockStyle::default();
+    let mut menu = menu::Menu::new(render::grid_frame(session.puzzle().dimensions).top_right());
 
     loop {
         let dimensions = session.puzzle().dimensions;
-        let state = menu::MenuState {
-            can_undo: session.can_undo(),
-            can_redo: session.can_redo(),
-        };
-        let menu = menu::Menu::new(render::grid_frame(dimensions).top_right(), state);
-        let output = render::render_game(session.puzzle(), cursor_style, lock_style, &menu);
+        let availability =
+            menu::ActionAvailability { can_undo: session.can_undo(), can_redo: session.can_redo() };
+        let output =
+            render::render_game(session.puzzle(), cursor_style, lock_style, &menu, availability);
         execute!(stdout(), Clear(ClearType::All), MoveTo(0, 0)).ok();
         print!("{}\r\n", output.replace('\n', "\r\n"));
         stdout().flush().ok();
@@ -98,7 +97,7 @@ fn main() {
             if let Some(button) = button {
                 let position = (mouse_event.column as usize, mouse_event.row as usize);
                 let action = if button == LEFT_BUTTON {
-                    menu.action_at(position)
+                    menu.click(position)
                 } else {
                     None
                 };

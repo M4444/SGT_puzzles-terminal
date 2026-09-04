@@ -1,6 +1,7 @@
 //! Generating and reading Net puzzles.
 
 use crate::ffi::{window_offset, Midend, RawDrawing, RawDrawingApi, RawGame, RawGameState};
+use crate::menu::{LegendEntry, LegendGroup};
 use std::ffi::{c_char, c_int, c_void, CStr};
 
 extern "C" {
@@ -170,10 +171,7 @@ extern "C" fn rust_emit_state(
     frontend.puzzle = Some(NetPuzzle {
         dimensions: (width, height),
         tiles: tiles.chunks(width).map(|row| row.to_vec()).collect(),
-        cursor: Cursor {
-            position: (cur_x as usize, cur_y as usize),
-            visible: cur_visible,
-        },
+        cursor: Cursor { position: (cur_x as usize, cur_y as usize), visible: cur_visible },
         source: (source_x as usize, source_y as usize),
         origin: (org_x as usize, org_y as usize),
         status: String::new(),
@@ -201,6 +199,31 @@ pub fn generate() -> NetPuzzle {
     frontend.puzzle.take().expect("emit_state was not called")
 }
 
+/// Net's mouse inputs.
+const MOUSE_CONTROLS: &[LegendEntry] = &[
+    LegendEntry { input: "Left button", description: "rotate tile 90° counter clockwise" },
+    LegendEntry { input: "Right button", description: "rotate tile 90° clockwise" },
+    LegendEntry { input: "Middle button", description: "lock / unlock tile" },
+];
+
+/// Net's keyboard inputs.
+const KEYBOARD_CONTROLS: &[LegendEntry] = &[
+    LegendEntry { input: "Arrows", description: "move cursor" },
+    LegendEntry { input: "Ctrl + arrows", description: "move source tile" },
+    LegendEntry { input: "Shift + arrows", description: "move origin (wrapping)" },
+    LegendEntry { input: "Ctrl + Shift + arrows", description: "move source and origin" },
+    LegendEntry { input: "A / Enter", description: "rotate tile 90° counter clockwise" },
+    LegendEntry { input: "D", description: "rotate tile 90° clockwise" },
+    LegendEntry { input: "F", description: "rotate tile 180°" },
+    LegendEntry { input: "S / Space", description: "lock / unlock tile" },
+    LegendEntry { input: "J", description: "jumble unlocked tiles" },
+];
+
+pub(crate) const GAME_CONTROLS: &[LegendGroup] = &[
+    LegendGroup { label: Some("Mouse:"), entries: MOUSE_CONTROLS },
+    LegendGroup { label: Some("Keyboard:"), entries: KEYBOARD_CONTROLS },
+];
+
 /// A live, playable Net session: owns the mid-end and the front end
 /// state, for as long as the session is played.
 pub struct Session {
@@ -223,10 +246,7 @@ impl Session {
 
     /// The puzzle state as of the most recent `new()`/`process_key()`.
     pub fn puzzle(&self) -> &NetPuzzle {
-        self.frontend
-            .puzzle
-            .as_ref()
-            .expect("emit_state was not called")
+        self.frontend.puzzle.as_ref().expect("emit_state was not called")
     }
 
     /// Sends one raw key/button code straight to the mid-end. Returns

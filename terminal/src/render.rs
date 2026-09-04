@@ -6,7 +6,7 @@
 //! result to text. Given a screen coordinate, `tiles_at()` locates
 //! every tile it falls within.
 
-use crate::menu::Menu;
+use crate::menu::{ActionAvailability, Menu};
 use crate::net::{Cursor, GridDimensions, NetPuzzle, TileCoord, TileCoordNeighbors, Tiles};
 use crossterm::style::{Attribute, SetAttribute};
 use std::borrow::Cow;
@@ -17,6 +17,7 @@ pub fn render_game(
     cursor_style: CursorStyle,
     lock_style: LockStyle,
     menu: &Menu,
+    availability: ActionAvailability,
 ) -> String {
     let puzzle = puzzle_relative_to_origin(puzzle);
     let dimensions = puzzle.dimensions;
@@ -32,7 +33,7 @@ pub fn render_game(
     draw_frame(&mut canvas);
     draw_status_bar(&mut canvas, &puzzle.status);
 
-    menu.draw(&mut canvas);
+    menu.draw(&mut canvas, availability);
 
     flatten_to_lines(&canvas).join("\n")
 }
@@ -60,7 +61,11 @@ fn puzzle_relative_to_origin(puzzle: &NetPuzzle) -> Cow<'_, NetPuzzle> {
 /// Transforms a cursor's position from game coordinates into its
 /// position relative to the current origin, leaving its visibility
 /// unchanged.
-fn cursor_relative_to_origin(cursor: Cursor, dimensions: GridDimensions, origin: TileCoord) -> Cursor {
+fn cursor_relative_to_origin(
+    cursor: Cursor,
+    dimensions: GridDimensions,
+    origin: TileCoord,
+) -> Cursor {
     Cursor {
         position: relative_to_origin(cursor.position, dimensions, origin),
         visible: cursor.visible,
@@ -94,10 +99,7 @@ fn relative_to_origin(
     (width, height): GridDimensions,
     (origin_x, origin_y): TileCoord,
 ) -> TileCoord {
-    (
-        (x + width - origin_x) % width,
-        (y + height - origin_y) % height,
-    )
+    ((x + width - origin_x) % width, (y + height - origin_y) % height)
 }
 
 /// How strongly a line is drawn.
@@ -285,6 +287,11 @@ impl Rect {
         Rect { top_left, size }
     }
 
+    /// A one cell tall rectangle.
+    pub(crate) fn row(start: Coord, length: usize) -> Rect {
+        Rect::new(start, Size::new(length, 1))
+    }
+
     /// The rectangle spanning both corners, each of which it covers.
     fn from_corners(top_left: Coord, bottom_right: Coord) -> Rect {
         Rect::new(
@@ -377,7 +384,10 @@ fn tile_offset_to_coord((tile_x, tile_y): TileCoord, (offset_x, offset_y): Offse
 /// The inverse of `tile_offset_to_coord`: which tile a screen coordinate
 /// falls in, and its offset within that tile. `None` if the coordinate
 /// is outside the grid entirely.
-fn coord_to_tile_offset(coord: Coord, (width, height): GridDimensions) -> Option<(TileCoord, Offset)> {
+fn coord_to_tile_offset(
+    coord: Coord,
+    (width, height): GridDimensions,
+) -> Option<(TileCoord, Offset)> {
     // Left of or above the grid.
     if coord.x < GRID_OFFSET_X || coord.y < GRID_OFFSET_Y {
         return None;
@@ -551,6 +561,12 @@ impl Canvas {
         }
     }
 
+    /// The board: the frame and the status bar row beneath it.
+    pub(crate) fn board(&self) -> Rect {
+        let bottom_right = Coord::new(self.frame.right(), self.status_bar_start.y);
+        Rect::from_corners(self.frame.top_left, bottom_right)
+    }
+
     fn width(&self) -> usize {
         self.cells[0].len()
     }
@@ -601,7 +617,7 @@ impl Canvas {
         self.reversed[coord.y][coord.x] = true;
     }
 
-    fn mark_reversed_region(&mut self, coords: impl IntoIterator<Item = Coord>) {
+    pub(crate) fn mark_reversed_region(&mut self, coords: impl IntoIterator<Item = Coord>) {
         for coord in coords {
             self.mark_reversed(coord);
         }
@@ -990,13 +1006,17 @@ fn flatten_to_lines(canvas: &Canvas) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::menu::MenuState;
+    use crate::menu::ActionAvailability;
     use crate::net::TileCoordNeighbors;
 
-    /// A menu beside a board of the given size, with nothing dimmed.
+    /// A menu beside a board of the given size, every tab closed.
     fn menu(dimensions: GridDimensions) -> Menu {
-        let state = MenuState { can_undo: true, can_redo: true };
-        Menu::new(grid_frame(dimensions).top_right(), state)
+        Menu::new(grid_frame(dimensions).top_right())
+    }
+
+    /// Every action available, so nothing is dimmed.
+    fn nothing_dimmed() -> ActionAvailability {
+        ActionAvailability { can_undo: true, can_redo: true }
     }
 
     /// A canvas sized for the board and its menu.
@@ -1090,12 +1110,12 @@ mod tests {
         assert_tile_boundary_shared(tile, tile.bottom(), (0, TILE_HEIGHT - 1));
     }
 
-    /// A 5x5 board's frame is 25 columns wide and the menu adds 59.
+    /// A 5x5 board's frame is 25 columns wide and the menu adds 60.
     /// The board is the taller of the two, so it sets the height.
     #[test]
     fn canvas_new_computes_expected_size() {
         let canvas = canvas((5, 5));
-        assert_eq!(canvas.width(), 84);
+        assert_eq!(canvas.width(), 85);
         assert_eq!(canvas.height(), 14);
     }
 
@@ -1118,7 +1138,13 @@ mod tests {
         for _ in 0..100 {
             let puzzle = crate::net::generate();
             let menu = menu(puzzle.dimensions);
-            render_game(&puzzle, CursorStyle::Outline, LockStyle::default(), &menu);
+            render_game(
+                &puzzle,
+                CursorStyle::Outline,
+                LockStyle::default(),
+                &menu,
+                nothing_dimmed(),
+            );
         }
     }
 
@@ -1186,14 +1212,13 @@ mod tests {
     fn render_game_dims_unavailable_menu_buttons() {
         let puzzle = crate::net::generate();
         let dim = SetAttribute(Attribute::Dim).to_string();
-        let corner = grid_frame(puzzle.dimensions).top_right();
-        let render = |state| {
-            let menu = Menu::new(corner, state);
-            render_game(&puzzle, CursorStyle::Outline, LockStyle::default(), &menu)
+        let menu = menu(puzzle.dimensions);
+        let render = |availability| {
+            render_game(&puzzle, CursorStyle::Outline, LockStyle::default(), &menu, availability)
         };
 
-        let fresh = MenuState { can_undo: false, can_redo: false };
-        let mid_game = MenuState { can_undo: true, can_redo: true };
+        let fresh = ActionAvailability { can_undo: false, can_redo: false };
+        let mid_game = ActionAvailability { can_undo: true, can_redo: true };
 
         assert!(render(fresh).contains(&dim));
         assert!(!render(mid_game).contains(&dim));
