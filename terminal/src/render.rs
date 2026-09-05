@@ -30,7 +30,10 @@ pub fn render_game(
     draw_barriers(&mut canvas, &puzzle.tiles, dimensions);
     draw_locked(&mut canvas, &puzzle.tiles, dimensions, lock_style);
     draw_cursor(&mut canvas, puzzle.cursor, cursor_style);
-    draw_frame(&mut canvas);
+    // The frame is what marks the board as focused.
+    if !menu.has_focus() {
+        draw_frame(&mut canvas);
+    }
     draw_status_bar(&mut canvas, &puzzle.status);
 
     menu.draw(&mut canvas, availability);
@@ -506,6 +509,13 @@ enum Cell {
     Marker(char),
 }
 
+/// The ways text can be marked.
+#[derive(Clone, Copy)]
+pub(crate) enum Mark {
+    Bold,
+    Reversed,
+}
+
 /// A dense grid of `Cell`, one per screen coordinate, initialized to a
 /// blank segment (`BLANK`). Sized from the tile grid and the menu
 /// passed to `new()`.
@@ -517,6 +527,9 @@ pub(crate) struct Canvas {
     /// Which positions render dimmed (a disabled button), independent
     /// of `cells`' own content.
     dimmed: Vec<Vec<bool>>,
+    /// Which positions render bold (whatever has focus), independent
+    /// of `cells`' own content.
+    bold: Vec<Vec<bool>>,
     pub(crate) frame: Rect,
     /// Where the status bar's text begins: the frame's left edge, on
     /// the row just below it.
@@ -556,6 +569,7 @@ impl Canvas {
             cells: vec![vec![Cell::Segment(BLANK); canvas_size.width]; canvas_size.height],
             reversed: vec![vec![false; canvas_size.width]; canvas_size.height],
             dimmed: vec![vec![false; canvas_size.width]; canvas_size.height],
+            bold: vec![vec![false; canvas_size.width]; canvas_size.height],
             frame,
             status_bar_start,
         }
@@ -617,7 +631,7 @@ impl Canvas {
         self.reversed[coord.y][coord.x] = true;
     }
 
-    pub(crate) fn mark_reversed_region(&mut self, coords: impl IntoIterator<Item = Coord>) {
+    fn mark_reversed_region(&mut self, coords: impl IntoIterator<Item = Coord>) {
         for coord in coords {
             self.mark_reversed(coord);
         }
@@ -653,9 +667,47 @@ impl Canvas {
         }
     }
 
-    fn is_dimmed(&self, coord: impl Into<Coord>) -> bool {
+    /// Sets bold rendering at this position.
+    fn mark_bold(&mut self, coord: impl Into<Coord>) {
         let coord = coord.into();
-        self.dimmed[coord.y][coord.x]
+        self.bold[coord.y][coord.x] = true;
+    }
+
+    fn mark_bold_region(&mut self, coords: impl IntoIterator<Item = Coord>) {
+        for coord in coords {
+            self.mark_bold(coord);
+        }
+    }
+
+    /// Draws text, marking every cell it covers.
+    pub(crate) fn draw_text_marked(
+        &mut self,
+        start: impl Into<Coord>,
+        text: &str,
+        mark: Option<Mark>,
+    ) {
+        let start = start.into();
+        self.draw_text(start, text);
+        let covered = Rect::row(start, text.chars().count());
+        match mark {
+            Some(Mark::Bold) => self.mark_bold_region(covered.coords()),
+            Some(Mark::Reversed) => self.mark_reversed_region(covered.coords()),
+            None => {}
+        }
+    }
+
+    /// How strongly a position renders. A terminal has one intensity to
+    /// set, so where a position is both dim and bold, dim wins: being
+    /// unavailable outranks having focus.
+    fn intensity_at(&self, coord: impl Into<Coord>) -> Intensity {
+        let coord = coord.into();
+        if self.dimmed[coord.y][coord.x] {
+            Intensity::Dim
+        } else if self.bold[coord.y][coord.x] {
+            Intensity::Bold
+        } else {
+            Intensity::Normal
+        }
     }
 }
 
@@ -964,13 +1016,30 @@ fn draw_status_bar(canvas: &mut Canvas, status: &str) {
     canvas.draw_text(canvas.status_bar_start, status);
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Intensity {
+    Normal,
+    Bold,
+    Dim,
+}
+
+impl Intensity {
+    fn as_attribute(self) -> Attribute {
+        match self {
+            Intensity::Normal => Attribute::NormalIntensity,
+            Intensity::Bold => Attribute::Bold,
+            Intensity::Dim => Attribute::Dim,
+        }
+    }
+}
+
 /// Flattens the drawn canvas into one line of text per screen row.
 fn flatten_to_lines(canvas: &Canvas) -> Vec<String> {
     let mut lines: Vec<String> = Vec::with_capacity(canvas.height());
     for y in 0..canvas.height() {
         let mut line = String::with_capacity(canvas.width());
         let mut reversed = false;
-        let mut dimmed = false;
+        let mut active_intensity = Intensity::Normal;
         for x in 0..canvas.width() {
             if canvas.is_reversed((x, y)) != reversed {
                 reversed = !reversed;
@@ -981,21 +1050,17 @@ fn flatten_to_lines(canvas: &Canvas) -> Vec<String> {
                 };
                 line.push_str(&SetAttribute(attribute).to_string());
             }
-            if canvas.is_dimmed((x, y)) != dimmed {
-                dimmed = !dimmed;
-                let attribute = if dimmed {
-                    Attribute::Dim
-                } else {
-                    Attribute::NormalIntensity
-                };
-                line.push_str(&SetAttribute(attribute).to_string());
+            let cell_intensity = canvas.intensity_at((x, y));
+            if cell_intensity != active_intensity {
+                active_intensity = cell_intensity;
+                line.push_str(&SetAttribute(active_intensity.as_attribute()).to_string());
             }
             line.push(canvas.char_at((x, y)));
         }
         if reversed {
             line.push_str(&SetAttribute(Attribute::NoReverse).to_string());
         }
-        if dimmed {
+        if active_intensity != Intensity::Normal {
             line.push_str(&SetAttribute(Attribute::NormalIntensity).to_string());
         }
         lines.push(line);

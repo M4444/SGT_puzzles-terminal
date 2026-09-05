@@ -1,7 +1,7 @@
 //! The side menu: the tabs beside the board, separated from it by a
 //! divider.
 
-use crate::render::{draw_line, draw_rect_outline, Canvas, Coord, Rect, Size, Weight};
+use crate::render::{draw_line, draw_rect_outline, Canvas, Coord, Mark, Rect, Size, Weight};
 
 /// The menu's tabs, listed top to bottom.
 pub struct Menu {
@@ -9,6 +9,8 @@ pub struct Menu {
     /// Where the tabs start after the divider.
     content_top_left: Coord,
     size: Size,
+    /// Which tab has focus. `None` leaves it on the board.
+    focus: Option<usize>,
 }
 
 impl Menu {
@@ -16,10 +18,10 @@ impl Menu {
     pub(crate) fn new(board_top_right: Coord) -> Menu {
         let tabs = TABS
             .iter()
-            .map(|spec| Tab { spec, open: false, header: None, body: None })
+            .map(|spec| Tab { spec, open: false, cursor: 0, header: None, body: None })
             .collect();
         let content_top_left = Coord::new(board_top_right.x + 1 + MENU_MARGIN, board_top_right.y);
-        let mut menu = Menu { tabs, content_top_left, size: Size::new(0, 0) };
+        let mut menu = Menu { tabs, content_top_left, size: Size::new(0, 0), focus: None };
         menu.refresh_tabs();
         menu
     }
@@ -50,14 +52,16 @@ impl Menu {
     /// showing.
     pub(crate) fn draw(&self, canvas: &mut Canvas, availability: ActionAvailability) {
         draw_divider(canvas);
-        for tab in &self.tabs {
+        for (index, tab) in self.tabs.iter().enumerate() {
+            let focused = self.focus == Some(index);
             if let Some(header) = &tab.header {
-                draw_header(canvas, header, tab.open);
+                draw_header(canvas, header, tab.open, focused);
             }
             match &tab.body {
                 Some(Body::Buttons(buttons)) => {
-                    for button in buttons {
-                        draw_button(canvas, button, availability);
+                    for (position, button) in buttons.iter().enumerate() {
+                        let has_cursor = focused && position == tab.cursor;
+                        draw_button(canvas, button, availability, has_cursor);
                     }
                 }
                 Some(Body::Legend(legend)) => draw_legend(canvas, legend),
@@ -95,6 +99,68 @@ impl Menu {
     pub(crate) fn size(&self) -> Size {
         self.size
     }
+
+    /// Whether focus is on the menu rather than the board.
+    pub(crate) fn has_focus(&self) -> bool {
+        self.focus.is_some()
+    }
+
+    /// Returns focus to the board.
+    pub(crate) fn clear_focus(&mut self) {
+        self.focus = None;
+    }
+
+    /// Moves focus on to the next tab, returning it to the board once
+    /// it runs off the last one.
+    pub(crate) fn focus_next(&mut self) {
+        self.focus = match self.focus {
+            None => Some(0),
+            Some(LAST_TAB) => None,
+            Some(index) => Some(index + 1),
+        };
+    }
+
+    /// The reverse of `focus_next`.
+    pub(crate) fn focus_previous(&mut self) {
+        self.focus = match self.focus {
+            None => Some(LAST_TAB),
+            Some(0) => None,
+            Some(index) => Some(index - 1),
+        };
+    }
+
+    pub(crate) fn cursor_left(&mut self) {
+        if let Some(tab) = self.focused_tab() {
+            tab.cursor_previous();
+        }
+    }
+
+    pub(crate) fn cursor_right(&mut self) {
+        if let Some(tab) = self.focused_tab() {
+            tab.cursor_next();
+        }
+    }
+
+    fn focused_tab(&mut self) -> Option<&mut Tab> {
+        Some(&mut self.tabs[self.focus?])
+    }
+
+    /// Takes Enter on the focused tab. A tab showing buttons answers
+    /// the action of the button its cursor is on. Otherwise the tab
+    /// opens or closes, as clicking its header would.
+    pub(crate) fn press(&mut self) -> Option<Action> {
+        let index = self.focus?;
+        let tab = &self.tabs[index];
+        if let Some(Body::Buttons(buttons)) = &tab.body {
+            return Some(buttons[tab.cursor].spec.action);
+        }
+
+        if tab.header.is_some() {
+            self.tabs[index].open = !tab.open;
+            self.refresh_tabs();
+        }
+        None
+    }
 }
 
 /// A tab's name and body. A named tab draws a header and can be
@@ -115,6 +181,8 @@ enum BodySpec {
 struct Tab {
     spec: &'static TabSpec,
     open: bool,
+    /// Where the cursor sits among the tab's buttons.
+    cursor: usize,
     header: Option<Header>,
     body: Option<Body>,
 }
@@ -130,6 +198,20 @@ struct Header {
 enum Body {
     Buttons(Vec<Button>),
     Legend(Legend),
+}
+
+impl Tab {
+    /// Moves the button cursor on by one, stopping at the last button.
+    fn cursor_next(&mut self) {
+        if let Some(Body::Buttons(buttons)) = &self.body {
+            self.cursor = (self.cursor + 1).min(buttons.len().saturating_sub(1));
+        }
+    }
+
+    /// Moves the button cursor back by one, stopping at the first.
+    fn cursor_previous(&mut self) {
+        self.cursor = self.cursor.saturating_sub(1);
+    }
 }
 
 impl TabSpec {
@@ -241,6 +323,8 @@ const TABS: &[TabSpec] = &[
     TabSpec { name: Some("Game Controls"), body: BodySpec::Legend(crate::net::GAME_CONTROLS) },
 ];
 
+const LAST_TAB: usize = TABS.len() - 1;
+
 /// Columns of line before a header's padded name starts, so the name
 /// reads as sitting on the line.
 const HEADER_NAME_OFFSET: usize = 2;
@@ -309,13 +393,20 @@ fn draw_divider(canvas: &mut Canvas) {
 
 /// Draws a header: a line across the menu, the tab's name written
 /// over it, and an arrow at the right end showing which way a click
-/// will take it.
-fn draw_header(canvas: &mut Canvas, header: &Header, open: bool) {
+/// will take it. The line is heavy while the tab has focus.
+fn draw_header(canvas: &mut Canvas, header: &Header, open: bool, focused: bool) {
     let rect = header.rect;
     let row = rect.top();
-    draw_line(canvas, (rect.left(), row), (rect.right(), row), Weight::Light);
+    let weight = if focused {
+        Weight::Heavy
+    } else {
+        Weight::Light
+    };
+    draw_line(canvas, (rect.left(), row), (rect.right(), row), weight);
 
-    canvas.draw_text((rect.left() + HEADER_NAME_OFFSET, row), &format!(" {} ", header.name));
+    let name_start = Coord::new(rect.left() + HEADER_NAME_OFFSET, row);
+    let name = format!(" {} ", header.name);
+    canvas.draw_text_marked(name_start, &name, focused.then_some(Mark::Bold));
     canvas.draw_text((rect.right(), row), if open { "▲" } else { "▼" });
 }
 
@@ -331,9 +422,7 @@ fn draw_legend(canvas: &mut Canvas, legend: &Legend) {
             row += 1;
         }
         if let Some(label) = group.label {
-            canvas.draw_text((start_column, row), label);
-            let cells = Rect::row(Coord::new(start_column, row), label.chars().count());
-            canvas.mark_reversed_region(cells.coords());
+            canvas.draw_text_marked((start_column, row), label, Some(Mark::Reversed));
             row += 1;
         }
         for entry in group.entries {
@@ -346,11 +435,23 @@ fn draw_legend(canvas: &mut Canvas, legend: &Legend) {
 }
 
 /// Draws one button in its own rectangle, dimmed if its action can't
-/// be taken.
-fn draw_button(canvas: &mut Canvas, button: &Button, availability: ActionAvailability) {
+/// be taken and outlined heavy while the cursor is on it.
+fn draw_button(
+    canvas: &mut Canvas,
+    button: &Button,
+    availability: ActionAvailability,
+    has_cursor: bool,
+) {
     let rect = button.rect;
-    draw_rect_outline(canvas, rect, Weight::Light);
-    canvas.draw_text((rect.left() + 1, rect.top() + 1), &format!(" {} ", button.spec.label));
+    let weight = if has_cursor {
+        Weight::Heavy
+    } else {
+        Weight::Light
+    };
+    draw_rect_outline(canvas, rect, weight);
+    let label_start = Coord::new(rect.left() + 1, rect.top() + 1);
+    let label = format!(" {} ", button.spec.label);
+    canvas.draw_text_marked(label_start, &label, has_cursor.then_some(Mark::Bold));
     if !available(button.spec.action, availability) {
         canvas.mark_dimmed_region(rect.coords());
     }

@@ -5,8 +5,8 @@ mod render;
 
 use crossterm::cursor::{Hide, MoveTo, Show};
 use crossterm::event::{
-    self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyModifiers, MouseButton,
-    MouseEventKind,
+    self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEvent, KeyModifiers,
+    MouseButton, MouseEvent, MouseEventKind,
 };
 use crossterm::execute;
 use crossterm::terminal::{disable_raw_mode, enable_raw_mode, Clear, ClearType};
@@ -54,8 +54,8 @@ fn main() {
     let lock_style = render::LockStyle::default();
     let mut menu = menu::Menu::new(render::grid_frame(session.puzzle().dimensions).top_right());
 
-    loop {
-        let dimensions = session.puzzle().dimensions;
+    let mut game_running = true;
+    while game_running {
         let availability =
             menu::ActionAvailability { can_undo: session.can_undo(), can_redo: session.can_redo() };
         let output =
@@ -65,56 +65,90 @@ fn main() {
         stdout().flush().ok();
 
         let event = event::read().expect("failed to read input event");
-        if let Event::Key(key_event) = event {
-            let button = match key_event.code {
-                KeyCode::Char(c) => Some(c as i32),
-                KeyCode::Up => Some(CURSOR_UP),
-                KeyCode::Down => Some(CURSOR_DOWN),
-                KeyCode::Left => Some(CURSOR_LEFT),
-                KeyCode::Right => Some(CURSOR_RIGHT),
-                KeyCode::Enter => Some(CURSOR_SELECT),
-                _ => None,
-            };
-            let mut button = button;
-            if key_event.modifiers.contains(KeyModifiers::CONTROL) {
-                button = button.map(|button| button | MOD_CTRL);
-            }
-            if key_event.modifiers.contains(KeyModifiers::SHIFT) {
-                button = button.map(|button| button | MOD_SHFT);
-            }
-            if let Some(button) = button {
-                if !session.process_key(button) {
-                    break;
+        game_running = match event {
+            Event::Key(key) => take_key(key, &mut menu, &mut session),
+            Event::Mouse(mouse) => take_click(mouse, &mut menu, &mut session),
+            _ => true,
+        };
+    }
+}
+
+/// Takes one key press. Tab moves the focus, and everything else goes
+/// to whichever of the menu and the board holds it. Returns `false` if
+/// it signalled quit.
+fn take_key(key: KeyEvent, menu: &mut menu::Menu, session: &mut Session) -> bool {
+    match key.code {
+        KeyCode::Tab => {
+            menu.focus_next();
+            true
+        }
+        KeyCode::BackTab => {
+            menu.focus_previous();
+            true
+        }
+        _ => {
+            if menu.has_focus() {
+                match key.code {
+                    KeyCode::Left => {
+                        menu.cursor_left();
+                        true
+                    }
+                    KeyCode::Right => {
+                        menu.cursor_right();
+                        true
+                    }
+                    KeyCode::Enter => match menu.press() {
+                        Some(action) => take_action(action, session),
+                        None => true,
+                    },
+                    _ => true,
                 }
-            }
-        } else if let Event::Mouse(mouse_event) = event {
-            let button = match mouse_event.kind {
-                MouseEventKind::Down(MouseButton::Left) => Some(LEFT_BUTTON),
-                MouseEventKind::Down(MouseButton::Middle) => Some(MIDDLE_BUTTON),
-                MouseEventKind::Down(MouseButton::Right) => Some(RIGHT_BUTTON),
-                _ => None,
-            };
-            if let Some(button) = button {
-                let position = (mouse_event.column as usize, mouse_event.row as usize);
-                let action = if button == LEFT_BUTTON {
-                    menu.click(position)
-                } else {
-                    None
+            } else {
+                // The board has focus.
+                let mut button = match key.code {
+                    KeyCode::Char(c) => c as i32,
+                    KeyCode::Up => CURSOR_UP,
+                    KeyCode::Down => CURSOR_DOWN,
+                    KeyCode::Left => CURSOR_LEFT,
+                    KeyCode::Right => CURSOR_RIGHT,
+                    KeyCode::Enter => CURSOR_SELECT,
+                    _ => return true,
                 };
-                if let Some(action) = action {
-                    if !take_action(action, &mut session) {
-                        break;
-                    }
-                } else {
-                    let possible_tiles = render::tiles_at(position, dimensions);
-                    if let Some(tile) = resolve_tile(&possible_tiles, button, &session) {
-                        if !session.process_click(tile, button) {
-                            break;
-                        }
-                    }
+                if key.modifiers.contains(KeyModifiers::CONTROL) {
+                    button |= MOD_CTRL;
                 }
+                if key.modifiers.contains(KeyModifiers::SHIFT) {
+                    button |= MOD_SHFT;
+                }
+                session.process_key(button)
             }
         }
+    }
+}
+
+/// Takes one mouse button press. A left click goes to the menu first,
+/// and anything the menu doesn't claim falls through to the board.
+/// Returns `false` if it signalled quit.
+fn take_click(mouse: MouseEvent, menu: &mut menu::Menu, session: &mut Session) -> bool {
+    let button = match mouse.kind {
+        MouseEventKind::Down(MouseButton::Left) => LEFT_BUTTON,
+        MouseEventKind::Down(MouseButton::Middle) => MIDDLE_BUTTON,
+        MouseEventKind::Down(MouseButton::Right) => RIGHT_BUTTON,
+        _ => return true,
+    };
+    // Clicking anything moves the focus back to the board.
+    menu.clear_focus();
+
+    let position = (mouse.column as usize, mouse.row as usize);
+    if button == LEFT_BUTTON {
+        if let Some(action) = menu.click(position) {
+            return take_action(action, session);
+        }
+    }
+    let possible_tiles = render::tiles_at(position, session.puzzle().dimensions);
+    match resolve_tile(&possible_tiles, button, session) {
+        Some(tile) => session.process_click(tile, button),
+        None => true,
     }
 }
 
