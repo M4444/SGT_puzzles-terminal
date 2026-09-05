@@ -317,9 +317,33 @@ const COMMON_ACTIONS: &[ButtonSpec] = &[
     ButtonSpec { action: Action::Quit, label: "Quit" },
 ];
 
+/// The keys the mid-end takes, which only reach it while the board has
+/// focus.
+const BOARD_SHORTCUTS: &[LegendEntry] = &[
+    LegendEntry { input: "N", description: "new game" },
+    LegendEntry { input: "U", description: "undo move" },
+    LegendEntry { input: "R", description: "redo move" },
+    LegendEntry { input: "Ctrl + S", description: "solve game" },
+    LegendEntry { input: "Q", description: "quit game" },
+];
+
+/// The menu's own keys.
+const MENU_KEYS: &[LegendEntry] = &[
+    LegendEntry { input: "Tab", description: "move focus" },
+    LegendEntry { input: "Shift + Tab", description: "move focus back" },
+    LegendEntry { input: "Arrows", description: "move between buttons" },
+    LegendEntry { input: "Enter / Left mouse button", description: "press a button or open a tab" },
+];
+
+const MENU_CONTROLS: &[LegendGroup] = &[
+    LegendGroup { label: Some("Game:"), entries: BOARD_SHORTCUTS },
+    LegendGroup { label: Some("Menu:"), entries: MENU_KEYS },
+];
+
 /// The menu's tabs, in the order they appear.
 const TABS: &[TabSpec] = &[
     TabSpec { name: None, body: BodySpec::Buttons(COMMON_ACTIONS) },
+    TabSpec { name: Some("Menu Controls"), body: BodySpec::Legend(MENU_CONTROLS) },
     TabSpec { name: Some("Game Controls"), body: BodySpec::Legend(crate::net::GAME_CONTROLS) },
 ];
 
@@ -495,8 +519,9 @@ mod tests {
     /// A closed tab shows its header and nothing else.
     #[test]
     fn a_closed_tab_costs_only_its_header() {
-        // The button row's three, and one for Game Controls' header.
-        assert_eq!(menu().size().height, 4);
+        // The button row's three, and a header each for Menu Controls
+        // and Game Controls.
+        assert_eq!(menu().size().height, 5);
     }
 
     /// Clicking a header opens the tab, which answers no action and
@@ -504,15 +529,15 @@ mod tests {
     #[test]
     fn clicking_a_header_opens_the_tab() {
         let mut menu = menu();
-        // Game Controls' header, on the row below the button row.
+        // Menu Controls' header, on the row below the button row.
         assert!(menu.click((28, 3)).is_none());
 
-        // Mouse has a label and three entries, Keyboard a label and
-        // nine, with a blank row between the groups.
-        assert_eq!(menu.size().height, 4 + 15);
+        // Board has a label and five entries, Menu a label and four,
+        // with a blank row between the groups.
+        assert_eq!(menu.size().height, 5 + 12);
 
         assert!(menu.click((28, 3)).is_none());
-        assert_eq!(menu.size().height, 4);
+        assert_eq!(menu.size().height, 5);
     }
 
     fn unavailable_labels(availability: ActionAvailability) -> Vec<&'static str> {
