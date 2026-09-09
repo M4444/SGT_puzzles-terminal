@@ -50,24 +50,22 @@ fn main() {
     let _guard = TerminalGuard;
 
     let mut session = net::Session::new();
-    let cursor_style = render::CursorStyle::default();
-    let lock_style = render::LockStyle::default();
+    let mut styles = render::Styles::default();
     let mut menu = menu::Menu::new(render::grid_frame(session.puzzle().dimensions).top_right());
 
     let mut game_running = true;
     while game_running {
         let availability =
             menu::ActionAvailability { can_undo: session.can_undo(), can_redo: session.can_redo() };
-        let output =
-            render::render_game(session.puzzle(), cursor_style, lock_style, &menu, availability);
+        let output = render::render_game(session.puzzle(), styles, &menu, availability);
         execute!(stdout(), Clear(ClearType::All), MoveTo(0, 0)).ok();
         print!("{}\r\n", output.replace('\n', "\r\n"));
         stdout().flush().ok();
 
         let event = event::read().expect("failed to read input event");
         game_running = match event {
-            Event::Key(key) => take_key(key, &mut menu, &mut session),
-            Event::Mouse(mouse) => take_click(mouse, &mut menu, &mut session),
+            Event::Key(key) => take_key(key, &mut menu, &mut session, &mut styles),
+            Event::Mouse(mouse) => take_click(mouse, &mut menu, &mut session, &mut styles),
             _ => true,
         };
     }
@@ -76,7 +74,12 @@ fn main() {
 /// Takes one key press. Tab moves the focus, and everything else goes
 /// to whichever of the menu and the board holds it. Returns `false` if
 /// it signalled quit.
-fn take_key(key: KeyEvent, menu: &mut menu::Menu, session: &mut Session) -> bool {
+fn take_key(
+    key: KeyEvent,
+    menu: &mut menu::Menu,
+    session: &mut Session,
+    styles: &mut render::Styles,
+) -> bool {
     match key.code {
         KeyCode::Tab => {
             menu.focus_next();
@@ -98,7 +101,7 @@ fn take_key(key: KeyEvent, menu: &mut menu::Menu, session: &mut Session) -> bool
                         true
                     }
                     KeyCode::Enter => match menu.press() {
-                        Some(action) => take_action(action, session),
+                        Some(action) => take_action(action, session, styles),
                         None => true,
                     },
                     _ => true,
@@ -129,7 +132,12 @@ fn take_key(key: KeyEvent, menu: &mut menu::Menu, session: &mut Session) -> bool
 /// Takes one mouse button press. A left click goes to the menu first,
 /// and anything the menu doesn't claim falls through to the board.
 /// Returns `false` if it signalled quit.
-fn take_click(mouse: MouseEvent, menu: &mut menu::Menu, session: &mut Session) -> bool {
+fn take_click(
+    mouse: MouseEvent,
+    menu: &mut menu::Menu,
+    session: &mut Session,
+    styles: &mut render::Styles,
+) -> bool {
     let button = match mouse.kind {
         MouseEventKind::Down(MouseButton::Left) => LEFT_BUTTON,
         MouseEventKind::Down(MouseButton::Middle) => MIDDLE_BUTTON,
@@ -142,7 +150,7 @@ fn take_click(mouse: MouseEvent, menu: &mut menu::Menu, session: &mut Session) -
     let position = (mouse.column as usize, mouse.row as usize);
     if button == LEFT_BUTTON {
         if let Some(action) = menu.click(position) {
-            return take_action(action, session);
+            return take_action(action, session, styles);
         }
     }
     let possible_tiles = render::tiles_at(position, session.puzzle().dimensions);
@@ -153,7 +161,7 @@ fn take_click(mouse: MouseEvent, menu: &mut menu::Menu, session: &mut Session) -
 }
 
 /// Carries out a menu action. Returns `false` if it signalled quit.
-fn take_action(action: menu::Action, session: &mut Session) -> bool {
+fn take_action(action: menu::Action, session: &mut Session, styles: &mut render::Styles) -> bool {
     match action {
         menu::Action::NewGame => session.process_key(UI_NEWGAME),
         menu::Action::Undo => session.process_key(UI_UNDO),
@@ -162,6 +170,14 @@ fn take_action(action: menu::Action, session: &mut Session) -> bool {
         menu::Action::Quit => session.process_key(UI_QUIT),
         menu::Action::Restart => {
             session.restart();
+            true
+        }
+        menu::Action::SetCursorStyle(style) => {
+            styles.cursor = style;
+            true
+        }
+        menu::Action::SetLockStyle(style) => {
+            styles.lock = style;
             true
         }
     }

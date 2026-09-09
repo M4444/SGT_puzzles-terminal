@@ -1,7 +1,10 @@
 //! The side menu: the tabs beside the board, separated from it by a
 //! divider.
 
-use crate::render::{draw_line, draw_rect_outline, Canvas, Coord, Mark, Rect, Size, Weight};
+use crate::render::{
+    draw_line, draw_rect_outline, Canvas, Coord, CursorStyle, LockStyle, Mark, Rect, Size, Styles,
+    Weight,
+};
 
 /// The menu's tabs, listed top to bottom.
 pub struct Menu {
@@ -50,7 +53,12 @@ impl Menu {
 
     /// Draws the divider, then each tab's header and any body it's
     /// showing.
-    pub(crate) fn draw(&self, canvas: &mut Canvas, availability: ActionAvailability) {
+    pub(crate) fn draw(
+        &self,
+        canvas: &mut Canvas,
+        availability: ActionAvailability,
+        styles: Styles,
+    ) {
         draw_divider(canvas);
         for (index, tab) in self.tabs.iter().enumerate() {
             let focused = self.focus == Some(index);
@@ -61,7 +69,7 @@ impl Menu {
                 Some(Body::Buttons(buttons)) => {
                     for (position, button) in buttons.iter().enumerate() {
                         let has_cursor = focused && position == tab.cursor;
-                        draw_button(canvas, button, availability, has_cursor);
+                        draw_button(canvas, button, availability, has_cursor, styles);
                     }
                 }
                 Some(Body::Legend(legend)) => draw_legend(canvas, legend),
@@ -170,9 +178,11 @@ struct TabSpec {
     body: BodySpec,
 }
 
-/// What a tab shows.
+/// What a tab shows. Choices are buttons standing for one setting's
+/// options, so each carries a tick column showing which is in use.
 enum BodySpec {
     Buttons(&'static [ButtonSpec]),
+    Choices(&'static [ButtonSpec]),
     Legend(&'static [LegendGroup]),
 }
 
@@ -229,26 +239,16 @@ impl TabSpec {
 impl BodySpec {
     fn width(&self) -> usize {
         match self {
-            BodySpec::Buttons(specs) => specs.iter().map(|spec| button_width(spec.label)).sum(),
+            BodySpec::Buttons(specs) => buttons_width(specs, false),
+            BodySpec::Choices(specs) => buttons_width(specs, true),
             BodySpec::Legend(groups) => legend_width(groups),
         }
     }
 
     fn place(&self, top_left: Coord) -> Body {
         match self {
-            BodySpec::Buttons(specs) => {
-                let mut x = top_left.x;
-                let buttons = specs
-                    .iter()
-                    .map(|spec| {
-                        let size = Size::new(button_width(spec.label), BUTTON_HEIGHT);
-                        let rect = Rect::new(Coord::new(x, top_left.y), size);
-                        x += size.width;
-                        Button { spec, rect }
-                    })
-                    .collect();
-                Body::Buttons(buttons)
-            }
+            BodySpec::Buttons(specs) => Body::Buttons(place_buttons(specs, top_left, false)),
+            BodySpec::Choices(specs) => Body::Buttons(place_buttons(specs, top_left, true)),
             BodySpec::Legend(groups) => Body::Legend(Legend { top_left, groups }),
         }
     }
@@ -291,6 +291,20 @@ pub enum Action {
     Redo,
     Solve,
     Quit,
+    SetCursorStyle(CursorStyle),
+    SetLockStyle(LockStyle),
+}
+
+/// Shown in a choice button's tick column when it's the current one.
+const TICK: char = '✓';
+
+/// Whether a choice's action sets the style the board already uses.
+fn is_current(action: Action, styles: Styles) -> bool {
+    match action {
+        Action::SetCursorStyle(style) => style == styles.cursor,
+        Action::SetLockStyle(style) => style == styles.lock,
+        _ => false,
+    }
 }
 
 /// A button's action and label.
@@ -305,6 +319,8 @@ struct ButtonSpec {
 struct Button {
     spec: &'static ButtonSpec,
     rect: Rect,
+    /// Whether the button is one of a set of choices.
+    choice: bool,
 }
 
 /// The actions every game's menu offers.
@@ -340,9 +356,23 @@ const MENU_CONTROLS: &[LegendGroup] = &[
     LegendGroup { label: Some("Menu:"), entries: MENU_KEYS },
 ];
 
+const CURSOR_STYLES: &[ButtonSpec] = &[
+    ButtonSpec { action: Action::SetCursorStyle(CursorStyle::Outline), label: "Outline" },
+    ButtonSpec { action: Action::SetCursorStyle(CursorStyle::ReverseTileCenter), label: "Center" },
+    ButtonSpec { action: Action::SetCursorStyle(CursorStyle::ReverseTileFull), label: "Full" },
+];
+
+const LOCK_STYLES: &[ButtonSpec] = &[
+    ButtonSpec { action: Action::SetLockStyle(LockStyle::ReverseTileConnected), label: "Merged" },
+    ButtonSpec { action: Action::SetLockStyle(LockStyle::ReverseTileCenter), label: "Center" },
+    ButtonSpec { action: Action::SetLockStyle(LockStyle::ReverseTileFull), label: "Full" },
+];
+
 /// The menu's tabs, in the order they appear.
 const TABS: &[TabSpec] = &[
     TabSpec { name: None, body: BodySpec::Buttons(COMMON_ACTIONS) },
+    TabSpec { name: Some("Cursor Style"), body: BodySpec::Choices(CURSOR_STYLES) },
+    TabSpec { name: Some("Lock Style"), body: BodySpec::Choices(LOCK_STYLES) },
     TabSpec { name: Some("Menu Controls"), body: BodySpec::Legend(MENU_CONTROLS) },
     TabSpec { name: Some("Game Controls"), body: BodySpec::Legend(crate::net::GAME_CONTROLS) },
 ];
@@ -401,10 +431,28 @@ const MENU_MARGIN: usize = 2 * DIVIDER_MARGIN + 1;
 /// holding the label.
 const BUTTON_HEIGHT: usize = 3;
 
-/// A box-drawn button's width: the label, a one-column margin either
-/// side of it, and the button's own two border columns.
-fn button_width(label: &str) -> usize {
-    label.chars().count() + 4
+/// Every button pads a margin and a border column either side and a
+/// choice adds a tick with a space before its label.
+fn button_width(spec: &ButtonSpec, choice: bool) -> usize {
+    let tick = if choice { 2 } else { 0 };
+    spec.label.chars().count() + tick + 4
+}
+
+fn buttons_width(specs: &[ButtonSpec], choice: bool) -> usize {
+    specs.iter().map(|spec| button_width(spec, choice)).sum()
+}
+
+fn place_buttons(specs: &'static [ButtonSpec], top_left: Coord, choice: bool) -> Vec<Button> {
+    let mut x = top_left.x;
+    specs
+        .iter()
+        .map(|spec| {
+            let size = Size::new(button_width(spec, choice), BUTTON_HEIGHT);
+            let rect = Rect::new(Coord::new(x, top_left.y), size);
+            x += size.width;
+            Button { spec, rect, choice }
+        })
+        .collect()
 }
 
 /// Draws a light vertical line between the board and the menu,
@@ -458,13 +506,15 @@ fn draw_legend(canvas: &mut Canvas, legend: &Legend) {
     }
 }
 
-/// Draws one button in its own rectangle, dimmed if its action can't
-/// be taken and outlined heavy while the cursor is on it.
+/// Draws one button in its own rectangle, ticked if it is the choice
+/// in use, dimmed if its action can't be taken and outlined heavy
+/// while the cursor is on it.
 fn draw_button(
     canvas: &mut Canvas,
     button: &Button,
     availability: ActionAvailability,
     has_cursor: bool,
+    styles: Styles,
 ) {
     let rect = button.rect;
     let weight = if has_cursor {
@@ -474,7 +524,16 @@ fn draw_button(
     };
     draw_rect_outline(canvas, rect, weight);
     let label_start = Coord::new(rect.left() + 1, rect.top() + 1);
-    let label = format!(" {} ", button.spec.label);
+    let label = if button.choice {
+        let tick = if is_current(button.spec.action, styles) {
+            TICK
+        } else {
+            ' '
+        };
+        format!(" {tick} {} ", button.spec.label)
+    } else {
+        format!(" {} ", button.spec.label)
+    };
     canvas.draw_text_marked(label_start, &label, has_cursor.then_some(Mark::Bold));
     if !available(button.spec.action, availability) {
         canvas.mark_dimmed_region(rect.coords());
@@ -519,9 +578,9 @@ mod tests {
     /// A closed tab shows its header and nothing else.
     #[test]
     fn a_closed_tab_costs_only_its_header() {
-        // The button row's three, and a header each for Menu Controls
-        // and Game Controls.
-        assert_eq!(menu().size().height, 5);
+        // The button row's three, and a header each for the four
+        // named tabs.
+        assert_eq!(menu().size().height, 7);
     }
 
     /// Clicking a header opens the tab, which answers no action and
@@ -529,15 +588,14 @@ mod tests {
     #[test]
     fn clicking_a_header_opens_the_tab() {
         let mut menu = menu();
-        // Menu Controls' header, on the row below the button row.
+        // Cursor Style's header, on the row below the button row.
         assert!(menu.click((28, 3)).is_none());
 
-        // Board has a label and five entries, Menu a label and four,
-        // with a blank row between the groups.
-        assert_eq!(menu.size().height, 5 + 12);
+        // Its buttons take one row of three, like any button body.
+        assert_eq!(menu.size().height, 7 + BUTTON_HEIGHT);
 
         assert!(menu.click((28, 3)).is_none());
-        assert_eq!(menu.size().height, 5);
+        assert_eq!(menu.size().height, 7);
     }
 
     fn unavailable_labels(availability: ActionAvailability) -> Vec<&'static str> {

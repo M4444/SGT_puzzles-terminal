@@ -14,8 +14,7 @@ use std::cmp::max;
 
 pub fn render_game(
     puzzle: &NetPuzzle,
-    cursor_style: CursorStyle,
-    lock_style: LockStyle,
+    styles: Styles,
     menu: &Menu,
     availability: ActionAvailability,
 ) -> String {
@@ -28,15 +27,15 @@ pub fn render_game(
     draw_wires_and_endpoints(&mut canvas, &puzzle.tiles, dimensions);
     draw_source(&mut canvas, puzzle.source);
     draw_barriers(&mut canvas, &puzzle.tiles, dimensions);
-    draw_locked(&mut canvas, &puzzle.tiles, dimensions, lock_style);
-    draw_cursor(&mut canvas, puzzle.cursor, cursor_style);
+    draw_locked(&mut canvas, &puzzle.tiles, dimensions, styles.lock);
+    draw_cursor(&mut canvas, puzzle.cursor, styles.cursor);
     // The frame is what marks the board as focused.
     if !menu.has_focus() {
         draw_frame(&mut canvas);
     }
     draw_status_bar(&mut canvas, &puzzle.status);
 
-    menu.draw(&mut canvas, availability);
+    menu.draw(&mut canvas, availability, styles);
 
     flatten_to_lines(&canvas).join("\n")
 }
@@ -825,6 +824,13 @@ fn draw_source(canvas: &mut Canvas, source: TileCoord) {
     mark_tile(canvas, source, SOURCE_MARKER);
 }
 
+/// The board's two visual choices.
+#[derive(Clone, Copy, Debug, Default)]
+pub(crate) struct Styles {
+    pub(crate) cursor: CursorStyle,
+    pub(crate) lock: LockStyle,
+}
+
 /// How the keyboard cursor's tile is visually marked.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub enum CursorStyle {
@@ -1203,13 +1209,7 @@ mod tests {
         for _ in 0..100 {
             let puzzle = crate::net::generate();
             let menu = menu(puzzle.dimensions);
-            render_game(
-                &puzzle,
-                CursorStyle::Outline,
-                LockStyle::default(),
-                &menu,
-                nothing_dimmed(),
-            );
+            render_game(&puzzle, Styles::default(), &menu, nothing_dimmed());
         }
     }
 
@@ -1278,9 +1278,7 @@ mod tests {
         let puzzle = crate::net::generate();
         let dim = SetAttribute(Attribute::Dim).to_string();
         let menu = menu(puzzle.dimensions);
-        let render = |availability| {
-            render_game(&puzzle, CursorStyle::Outline, LockStyle::default(), &menu, availability)
-        };
+        let render = |availability| render_game(&puzzle, Styles::default(), &menu, availability);
 
         let fresh = ActionAvailability { can_undo: false, can_redo: false };
         let mid_game = ActionAvailability { can_undo: true, can_redo: true };
