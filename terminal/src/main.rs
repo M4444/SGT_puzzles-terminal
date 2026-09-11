@@ -100,7 +100,7 @@ fn take_key(
                         menu.cursor_right();
                         true
                     }
-                    KeyCode::Enter => match menu.press() {
+                    KeyCode::Enter | KeyCode::Char(' ') => match menu.press() {
                         Some(action) => take_action(action, session, styles),
                         None => true,
                     },

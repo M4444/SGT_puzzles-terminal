@@ -12,8 +12,17 @@ pub struct Menu {
     /// Where the tabs start after the divider.
     content_top_left: Coord,
     size: Size,
-    /// Which tab has focus. `None` leaves it on the board.
-    focus: Option<usize>,
+    /// What the menu's focus is on. `None` leaves it on the board.
+    focus: Option<Focus>,
+}
+
+/// What the focus can be on: a tab's header, which opens and closes it,
+/// or the buttons of a tab showing them. A legend takes no focus, since
+/// there is nothing in it to press.
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum Focus {
+    Header(usize),
+    Buttons(usize),
 }
 
 impl Menu {
@@ -61,12 +70,13 @@ impl Menu {
     ) {
         draw_divider(canvas);
         for (index, tab) in self.tabs.iter().enumerate() {
-            let focused = self.focus == Some(index);
             if let Some(header) = &tab.header {
+                let focused = self.focus == Some(Focus::Header(index));
                 draw_header(canvas, header, tab.open, focused);
             }
             match &tab.body {
                 Some(Body::Buttons(buttons)) => {
+                    let focused = self.focus == Some(Focus::Buttons(index));
                     for (position, button) in buttons.iter().enumerate() {
                         let has_cursor = focused && position == tab.cursor;
                         draw_button(canvas, button, availability, has_cursor, styles);
@@ -78,8 +88,8 @@ impl Menu {
         }
     }
 
-    /// Takes a click. A header opens or closes its tab and answers
-    /// nothing; a button answers its action, dimmed or not, since the
+    /// Takes a click. A header opens or closes its tab and returns no
+    /// action. A button returns its own, dimmed or not, since the
     /// mid-end ignores an action it can't take.
     pub(crate) fn click(&mut self, position: impl Into<Coord>) -> Option<Action> {
         let position = position.into();
@@ -89,12 +99,12 @@ impl Menu {
                 .is_some_and(|header| header.rect.contains(position))
         });
         if let Some(index) = header_hit {
-            self.tabs[index].open = !self.tabs[index].open;
+            self.tabs[index].toggle_open();
             self.refresh_tabs();
             return None;
         }
         for tab in &self.tabs {
-            if let Some(Body::Buttons(buttons)) = &tab.body {
+            if let Some(buttons) = tab.shown_buttons() {
                 if let Some(button) = buttons.iter().find(|button| button.rect.contains(position)) {
                     return Some(button.spec.action);
                 }
@@ -118,56 +128,57 @@ impl Menu {
         self.focus = None;
     }
 
-    /// Moves focus on to the next tab, returning it to the board once
+    /// Everywhere the focus can go, in the order it visits them: each
+    /// tab's header, then its buttons while it's showing them.
+    fn focus_order(&self) -> impl DoubleEndedIterator<Item = Focus> + '_ {
+        self.tabs.iter().enumerate().flat_map(|(index, tab)| {
+            let header = tab.header.is_some().then_some(Focus::Header(index));
+            let buttons = tab.shown_buttons().is_some().then_some(Focus::Buttons(index));
+            header.into_iter().chain(buttons)
+        })
+    }
+
+    /// Moves focus on to the next place, returning it to the board once
     /// it runs off the last one.
     pub(crate) fn focus_next(&mut self) {
         self.focus = match self.focus {
-            None => Some(0),
-            Some(LAST_TAB) => None,
-            Some(index) => Some(index + 1),
+            None => self.focus_order().next(),
+            Some(current) => self.focus_order().skip_while(|focus| *focus != current).nth(1),
         };
     }
 
     /// The reverse of `focus_next`.
     pub(crate) fn focus_previous(&mut self) {
         self.focus = match self.focus {
-            None => Some(LAST_TAB),
-            Some(0) => None,
-            Some(index) => Some(index - 1),
+            None => self.focus_order().rev().next(),
+            Some(current) => self.focus_order().rev().skip_while(|focus| *focus != current).nth(1),
         };
     }
 
     pub(crate) fn cursor_left(&mut self) {
-        if let Some(tab) = self.focused_tab() {
-            tab.cursor_previous();
+        if let Some(Focus::Buttons(index)) = self.focus {
+            self.tabs[index].cursor_previous();
         }
     }
 
     pub(crate) fn cursor_right(&mut self) {
-        if let Some(tab) = self.focused_tab() {
-            tab.cursor_next();
+        if let Some(Focus::Buttons(index)) = self.focus {
+            self.tabs[index].cursor_next();
         }
     }
 
-    fn focused_tab(&mut self) -> Option<&mut Tab> {
-        Some(&mut self.tabs[self.focus?])
-    }
-
-    /// Takes Enter on the focused tab. A tab showing buttons answers
-    /// the action of the button its cursor is on. Otherwise the tab
-    /// opens or closes, as clicking its header would.
+    /// Takes a press where the focus is. A header opens or closes its
+    /// tab, as clicking it would, and returns no action. Buttons return
+    /// the action of the one the cursor is on.
     pub(crate) fn press(&mut self) -> Option<Action> {
-        let index = self.focus?;
-        let tab = &self.tabs[index];
-        if let Some(Body::Buttons(buttons)) = &tab.body {
-            return Some(buttons[tab.cursor].spec.action);
+        match self.focus? {
+            Focus::Header(index) => {
+                self.tabs[index].toggle_open();
+                self.refresh_tabs();
+                None
+            }
+            Focus::Buttons(index) => self.tabs[index].cursor_action(),
         }
-
-        if tab.header.is_some() {
-            self.tabs[index].open = !tab.open;
-            self.refresh_tabs();
-        }
-        None
     }
 }
 
@@ -211,10 +222,26 @@ enum Body {
 }
 
 impl Tab {
+    fn toggle_open(&mut self) {
+        self.open = !self.open;
+    }
+
+    fn shown_buttons(&self) -> Option<&[Button]> {
+        match &self.body {
+            Some(Body::Buttons(buttons)) => Some(buttons),
+            _ => None,
+        }
+    }
+
+    fn cursor_action(&self) -> Option<Action> {
+        Some(self.shown_buttons()?[self.cursor].spec.action)
+    }
+
     /// Moves the button cursor on by one, stopping at the last button.
     fn cursor_next(&mut self) {
-        if let Some(Body::Buttons(buttons)) = &self.body {
-            self.cursor = (self.cursor + 1).min(buttons.len().saturating_sub(1));
+        if let Some(buttons) = self.shown_buttons() {
+            let last = buttons.len().saturating_sub(1);
+            self.cursor = (self.cursor + 1).min(last);
         }
     }
 
@@ -348,7 +375,8 @@ const MENU_KEYS: &[LegendEntry] = &[
     LegendEntry { input: "Tab", description: "move focus" },
     LegendEntry { input: "Shift + Tab", description: "move focus back" },
     LegendEntry { input: "Arrows", description: "move between buttons" },
-    LegendEntry { input: "Enter / Left mouse button", description: "press a button or open a tab" },
+    LegendEntry { input: "Enter / Space", description: "press a tab header or button" },
+    LegendEntry { input: "Left mouse button", description: "" },
 ];
 
 const MENU_CONTROLS: &[LegendGroup] = &[
@@ -377,8 +405,6 @@ const TABS: &[TabSpec] = &[
     TabSpec { name: Some("Game Controls"), body: BodySpec::Legend(crate::net::GAME_CONTROLS) },
 ];
 
-const LAST_TAB: usize = TABS.len() - 1;
-
 /// Columns of line before a header's padded name starts, so the name
 /// reads as sitting on the line.
 const HEADER_NAME_OFFSET: usize = 2;
@@ -403,7 +429,11 @@ fn legend_width(groups: &[LegendGroup]) -> usize {
         .map(|label| label.chars().count());
     let input_width = widest_legend_input(groups);
     let entry_widths = groups.iter().flat_map(|group| group.entries).map(|entry| {
-        input_width + LEGEND_SEPARATOR.chars().count() + entry.description.chars().count()
+        if entry.description.is_empty() {
+            entry.input.chars().count()
+        } else {
+            input_width + LEGEND_SEPARATOR.chars().count() + entry.description.chars().count()
+        }
     });
     label_widths.chain(entry_widths).max().unwrap_or(0)
 }
@@ -498,8 +528,12 @@ fn draw_legend(canvas: &mut Canvas, legend: &Legend) {
             row += 1;
         }
         for entry in group.entries {
-            let input = format!("{:<input_width$}", entry.input);
-            let text = format!("{input}{LEGEND_SEPARATOR}{}", entry.description);
+            let text = if entry.description.is_empty() {
+                entry.input.to_string()
+            } else {
+                let input = format!("{:<input_width$}", entry.input);
+                format!("{input}{LEGEND_SEPARATOR}{}", entry.description)
+            };
             canvas.draw_text((start_column, row), &text);
             row += 1;
         }
@@ -638,5 +672,85 @@ mod tests {
         assert!(find(27, 0).is_none());
         assert!(find(84, 0).is_none());
         assert!(find(28, 4).is_none());
+    }
+
+    /// The 'Tab' key visits each header and each row of buttons on
+    /// show, in the order they are drawn, then hands the focus back to
+    /// the board.
+    #[test]
+    fn focus_visits_every_header_and_row_of_buttons() {
+        let mut menu = menu();
+        let mut visited = Vec::new();
+        for _ in 0..6 {
+            menu.focus_next();
+            visited.push(menu.focus);
+        }
+
+        assert_eq!(
+            visited,
+            [
+                Some(Focus::Buttons(0)),
+                Some(Focus::Header(1)),
+                Some(Focus::Header(2)),
+                Some(Focus::Header(3)),
+                Some(Focus::Header(4)),
+                None,
+            ]
+        );
+    }
+
+    /// A legend has nothing to press, so opening one gives the focus
+    /// nowhere new to stop, where opening a row of buttons does.
+    #[test]
+    fn only_buttons_give_the_focus_somewhere_to_stop() {
+        let mut menu = menu();
+        let closed = menu.focus_order().count();
+
+        // Menu Controls, the third header down.
+        menu.click((28, 5));
+        assert_eq!(menu.focus_order().count(), closed);
+
+        // Cursor Style, the first.
+        menu.click((28, 3));
+        assert_eq!(menu.focus_order().count(), closed + 1);
+    }
+
+    /// 'Shift + Tab' reverses 'Tab' and from the board it lands on the
+    /// last place.
+    #[test]
+    fn focus_previous_reverses_focus_next() {
+        let mut menu = menu();
+        menu.focus_next();
+        menu.focus_next();
+        let two_in = menu.focus;
+
+        menu.focus_next();
+        menu.focus_previous();
+        assert_eq!(menu.focus, two_in);
+
+        menu.clear_focus();
+        menu.focus_previous();
+        assert_eq!(menu.focus, Some(Focus::Header(4)));
+    }
+
+    /// A press on a header opens or closes its tab and gives no
+    /// action, where a press on buttons gives the one under the cursor.
+    #[test]
+    fn pressing_a_header_opens_it_and_pressing_buttons_acts() {
+        let mut menu = menu();
+        let closed_height = menu.size().height;
+
+        // Cursor Style's header, the second place the focus visits.
+        menu.focus_next();
+        menu.focus_next();
+        assert!(menu.press().is_none());
+        assert_eq!(menu.size().height, closed_height + BUTTON_HEIGHT);
+
+        assert!(menu.press().is_none());
+        assert_eq!(menu.size().height, closed_height);
+
+        menu.clear_focus();
+        menu.focus_next();
+        assert!(matches!(menu.press(), Some(Action::NewGame)));
     }
 }
