@@ -9,9 +9,9 @@ use crossterm::event::{
     MouseButton, MouseEvent, MouseEventKind,
 };
 use crossterm::execute;
-use crossterm::terminal::{self, disable_raw_mode, enable_raw_mode, Clear, ClearType};
+use crossterm::terminal::{self, Clear, ClearType, disable_raw_mode, enable_raw_mode};
 use net::{Session, TileCoord};
-use std::io::{stdout, Write};
+use std::io::{Write, stdout};
 
 /// Raw key codes from puzzles.h's enum.
 const CURSOR_UP: i32 = 0x0209;
@@ -61,9 +61,11 @@ fn main() {
         let availability =
             menu::ActionAvailability { can_undo: session.can_undo(), can_redo: session.can_redo() };
         let output = render::render_game(session.puzzle(), styles, &menu, availability);
+
         // Anything past the last row would scroll the top away.
         let (_, rows) = terminal::size().expect("failed to query terminal size");
         let output: Vec<&str> = output.lines().take(rows.into()).collect();
+
         execute!(stdout(), Clear(ClearType::All), MoveTo(0, 0)).ok();
         print!("{}", output.join("\r\n"));
         stdout().flush().ok();
@@ -77,7 +79,7 @@ fn main() {
     }
 }
 
-/// Takes one key press. Tab moves the focus, and everything else goes
+/// Takes one key press. 'Tab' moves the focus, and everything else goes
 /// to whichever of the menu and the board holds it. Returns `false` if
 /// it signalled quit.
 fn take_key(
@@ -123,12 +125,14 @@ fn take_key(
                     KeyCode::Enter => CURSOR_SELECT,
                     _ => return true,
                 };
+
                 if key.modifiers.contains(KeyModifiers::CONTROL) {
                     button |= MOD_CTRL;
                 }
                 if key.modifiers.contains(KeyModifiers::SHIFT) {
                     button |= MOD_SHFT;
                 }
+
                 session.process_key(button)
             }
         }
@@ -154,11 +158,12 @@ fn take_click(
     menu.clear_focus();
 
     let position = (mouse.column as usize, mouse.row as usize);
-    if button == LEFT_BUTTON {
-        if let Some(action) = menu.click(position) {
-            return take_action(action, session, styles);
-        }
+    if button == LEFT_BUTTON
+        && let Some(action) = menu.click(position)
+    {
+        return take_action(action, session, styles);
     }
+
     let possible_tiles = render::tiles_at(position, session.puzzle().dimensions);
     match resolve_tile(&possible_tiles, button, session) {
         Some(tile) => session.process_click(tile, button),

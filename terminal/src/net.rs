@@ -1,10 +1,10 @@
 //! Generating and reading Net puzzles.
 
-use crate::ffi::{window_offset, Midend, RawDrawing, RawDrawingApi, RawGame, RawGameState};
+use crate::ffi::{Midend, RawDrawing, RawDrawingApi, RawGame, RawGameState, window_offset};
 use crate::menu::{LegendEntry, LegendGroup};
-use std::ffi::{c_char, c_int, c_void, CStr};
+use std::ffi::{CStr, c_char, c_int, c_void};
 
-extern "C" {
+unsafe extern "C" {
     #[link_name = "thegame"]
     static THEGAME: RawGame;
     #[link_name = "terminal_drawing_api"]
@@ -13,7 +13,7 @@ extern "C" {
 
 /// Which directions a tile has a wire pointing in.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
-pub struct Wires {
+pub(crate) struct Wires {
     pub right: bool,
     pub up: bool,
     pub left: bool,
@@ -45,7 +45,7 @@ impl Wires {
 /// Which of a tile's four edges carry a barrier, a wall no wire can
 /// cross. Both tiles either side of a wall record it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
-pub struct Barriers {
+pub(crate) struct Barriers {
     pub right: bool,
     pub up: bool,
     pub left: bool,
@@ -63,15 +63,17 @@ impl Barriers {
     }
 }
 
-pub type GridDimensions = (usize, usize);
-pub type TileCoord = (usize, usize);
-pub type Tiles = Vec<Vec<Tile>>;
+pub(crate) type GridDimensions = (usize, usize);
+pub(crate) type TileCoord = (usize, usize);
+pub(crate) type Tiles = Vec<Vec<Tile>>;
 
 /// A tile coordinate's neighbours one step over in each direction.
-pub trait TileCoordNeighbors {
+pub(crate) trait TileCoordNeighbors {
+    #[allow(dead_code)]
     fn right(&self) -> TileCoord;
     fn top(&self) -> TileCoord;
     fn left(&self) -> TileCoord;
+    #[allow(dead_code)]
     fn bottom(&self) -> TileCoord;
 }
 
@@ -97,7 +99,7 @@ impl TileCoordNeighbors for TileCoord {
 /// A single tile's wires and barriers, and whether it's currently
 /// powered or locked.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
-pub struct Tile {
+pub(crate) struct Tile {
     pub wires: Wires,
     pub barriers: Barriers,
     pub powered: bool,
@@ -106,14 +108,14 @@ pub struct Tile {
 
 /// The keyboard cursor's position and whether it's currently shown.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct Cursor {
+pub(crate) struct Cursor {
     pub position: TileCoord,
     pub visible: bool,
 }
 
 /// A Net puzzle, indexed `[row][column]`.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct NetPuzzle {
+pub(crate) struct NetPuzzle {
     pub dimensions: GridDimensions,
     pub tiles: Tiles,
     pub cursor: Cursor,
@@ -132,7 +134,7 @@ struct Frontend {
 /// Called from net.c's `game_redraw`, through our own `drawing_api`
 /// (`terminal_drawing_api`), with the same `state`/`active` that
 /// `compute_active` just produced.
-#[no_mangle]
+#[unsafe(no_mangle)]
 extern "C" fn rust_emit_state(
     dr: *mut RawDrawing,
     _state: *const RawGameState,
@@ -156,6 +158,7 @@ extern "C" fn rust_emit_state(
     let raw_active = unsafe { std::slice::from_raw_parts(active, width * height) };
     let raw_tiles = unsafe { std::slice::from_raw_parts(tiles, width * height) };
     let raw_barriers = unsafe { std::slice::from_raw_parts(barriers, width * height) };
+
     let tiles: Vec<Tile> = raw_tiles
         .iter()
         .zip(raw_active.iter())
@@ -180,23 +183,12 @@ extern "C" fn rust_emit_state(
 
 /// Called from net.c's `status_bar`, right after `rust_emit_state` within
 /// the same `game_redraw`.
-#[no_mangle]
+#[unsafe(no_mangle)]
 extern "C" fn rust_status_bar(dr: *mut RawDrawing, text: *const c_char) {
     let frontend = unsafe { &mut *((*dr).handle as *mut Frontend) };
     let text = unsafe { CStr::from_ptr(text) }.to_string_lossy().into_owned();
+
     frontend.puzzle.as_mut().expect("emit_state was not called").status = text;
-}
-
-/// Generates a fresh Net puzzle via FFI and reads it from the live state.
-pub fn generate() -> NetPuzzle {
-    let mut frontend = Box::new(Frontend::default());
-    let frontend_ptr = &mut *frontend as *mut Frontend as *mut c_void;
-
-    let midend = Midend::new(unsafe { &THEGAME }, unsafe { &TERMINAL_DRAWING_API }, frontend_ptr);
-    midend.new_game();
-    midend.redraw();
-
-    frontend.puzzle.take().expect("emit_state was not called")
 }
 
 /// Net's mouse inputs.
@@ -226,13 +218,13 @@ pub(crate) const GAME_CONTROLS: &[LegendGroup] = &[
 
 /// A live, playable Net session: owns the mid-end and the front end
 /// state, for as long as the session is played.
-pub struct Session {
+pub(crate) struct Session {
     midend: Midend,
     frontend: Box<Frontend>,
 }
 
 impl Session {
-    pub fn new() -> Session {
+    pub(crate) fn new() -> Session {
         let mut frontend = Box::new(Frontend::default());
         let frontend_ptr = &mut *frontend as *mut Frontend as *mut c_void;
 
@@ -245,46 +237,48 @@ impl Session {
     }
 
     /// The puzzle state as of the most recent `new()`/`process_key()`.
-    pub fn puzzle(&self) -> &NetPuzzle {
+    pub(crate) fn puzzle(&self) -> &NetPuzzle {
         self.frontend.puzzle.as_ref().expect("emit_state was not called")
     }
 
     /// Sends one raw key/button code straight to the mid-end. Returns
     /// `false` if it signalled quit.
-    pub fn process_key(&mut self, button: c_int) -> bool {
+    pub(crate) fn process_key(&mut self, button: c_int) -> bool {
         self.midend.process_key(button)
     }
 
     /// Returns the puzzle to its starting position. Unlike the other
     /// actions this has no keystroke of its own, so it goes straight
     /// to the mid-end and needs its own redraw.
-    pub fn restart(&mut self) {
+    pub(crate) fn restart(&mut self) {
         self.midend.restart_game();
         self.midend.redraw();
     }
 
-    pub fn can_undo(&self) -> bool {
+    pub(crate) fn can_undo(&self) -> bool {
         self.midend.can_undo()
     }
 
-    pub fn can_redo(&self) -> bool {
+    pub(crate) fn can_redo(&self) -> bool {
         self.midend.can_redo()
     }
 
     /// Sends one mouse button press on the given tile, converting it
     /// into the pixel coordinates net.c's own click handling expects.
     /// Returns `false` if it signalled quit.
-    pub fn process_click(&mut self, (tile_x, tile_y): TileCoord, button: c_int) -> bool {
+    pub(crate) fn process_click(&mut self, (tile_x, tile_y): TileCoord, button: c_int) -> bool {
         let tilesize = self.midend.tilesize();
         let line_thick = line_thick(tilesize);
         let window_offset = unsafe { window_offset() };
+
         // Centers the click in the tile.
         let x = window_offset + line_thick + tile_x as c_int * tilesize + tilesize / 2;
         let y = window_offset + line_thick + tile_y as c_int * tilesize + tilesize / 2;
+
         self.midend.process_click(x, y, button)
     }
 
-    pub fn exclude_locked(&self, tile_coords: &[TileCoord]) -> Vec<TileCoord> {
+    pub(crate) fn exclude_locked(&self, tile_coords: &[TileCoord]) -> Vec<TileCoord> {
         tile_coords
             .iter()
             .copied()

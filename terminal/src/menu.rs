@@ -2,17 +2,17 @@
 //! divider.
 
 use crate::render::{
-    draw_line, draw_rect_outline, Canvas, Coord, CursorStyle, LockStyle, Mark, Rect, Size, Styles,
-    Weight,
+    Canvas, Coord, CursorStyle, LockStyle, Mark, Rect, Size, Styles, Weight, draw_line,
+    draw_rect_outline,
 };
 
 /// The menu's tabs, listed top to bottom.
-pub struct Menu {
+pub(crate) struct Menu {
     tabs: Vec<Tab>,
     /// Where the tabs start after the divider.
     content_top_left: Coord,
     size: Size,
-    /// What the menu's focus is on. `None` leaves it on the board.
+    /// What the menu's focus is on. When it's `None`, the board has it.
     focus: Option<Focus>,
 }
 
@@ -34,6 +34,7 @@ impl Menu {
             .collect();
         let content_top_left = Coord::new(board_top_right.x + 1 + MENU_MARGIN, board_top_right.y);
         let mut menu = Menu { tabs, content_top_left, size: Size::new(0, 0), focus: None };
+
         menu.refresh_tabs();
         menu
     }
@@ -45,6 +46,7 @@ impl Menu {
         let left = self.content_top_left.x;
         let top = self.content_top_left.y;
         let mut row = top;
+
         for tab in &mut self.tabs {
             tab.header = tab.spec.name.map(|name| {
                 let rect = Rect::row(Coord::new(left, row), width);
@@ -57,6 +59,7 @@ impl Menu {
                 body
             });
         }
+
         self.size = Size::new(MENU_MARGIN + width, row - top);
     }
 
@@ -69,6 +72,7 @@ impl Menu {
         styles: Styles,
     ) {
         draw_divider(canvas);
+
         for (index, tab) in self.tabs.iter().enumerate() {
             if let Some(header) = &tab.header {
                 let focused = self.focus == Some(Focus::Header(index));
@@ -103,11 +107,12 @@ impl Menu {
             self.refresh_tabs();
             return None;
         }
+
         for tab in &self.tabs {
-            if let Some(buttons) = tab.shown_buttons() {
-                if let Some(button) = buttons.iter().find(|button| button.rect.contains(position)) {
-                    return Some(button.spec.action);
-                }
+            if let Some(buttons) = tab.shown_buttons()
+                && let Some(button) = buttons.iter().find(|button| button.rect.contains(position))
+            {
+                return Some(button.spec.action);
             }
         }
         None
@@ -118,7 +123,7 @@ impl Menu {
         self.size
     }
 
-    /// Whether focus is on the menu rather than the board.
+    /// Whether focus is on the menu.
     pub(crate) fn has_focus(&self) -> bool {
         self.focus.is_some()
     }
@@ -130,7 +135,7 @@ impl Menu {
 
     /// Everywhere the focus can go, in the order it visits them: each
     /// tab's header, then its buttons while it's showing them.
-    fn focus_order(&self) -> impl DoubleEndedIterator<Item = Focus> + '_ {
+    fn focus_order(&self) -> impl DoubleEndedIterator<Item = Focus> {
         self.tabs.iter().enumerate().flat_map(|(index, tab)| {
             let header = tab.header.is_some().then_some(Focus::Header(index));
             let buttons = tab.shown_buttons().is_some().then_some(Focus::Buttons(index));
@@ -150,7 +155,7 @@ impl Menu {
     /// The reverse of `focus_next`.
     pub(crate) fn focus_previous(&mut self) {
         self.focus = match self.focus {
-            None => self.focus_order().rev().next(),
+            None => self.focus_order().next_back(),
             Some(current) => self.focus_order().rev().skip_while(|focus| *focus != current).nth(1),
         };
     }
@@ -183,7 +188,7 @@ impl Menu {
 }
 
 /// A tab's name and body. A named tab draws a header and can be
-/// collapsed; an unnamed one is always just its body.
+/// collapsed. An unnamed one is always just its body.
 struct TabSpec {
     name: Option<&'static str>,
     body: BodySpec,
@@ -197,8 +202,8 @@ enum BodySpec {
     Legend(&'static [LegendGroup]),
 }
 
-/// A tab's header and body. An unnamed tab has no header; a closed
-/// one has no body.
+/// A tab's header and body. An unnamed tab has no header. A closed one
+/// has no body.
 struct Tab {
     spec: &'static TabSpec,
     open: bool,
@@ -259,6 +264,7 @@ impl TabSpec {
         let header = self
             .name
             .map_or(0, |name| HEADER_NAME_OFFSET + name.chars().count() + 3);
+
         self.body.width().max(header)
     }
 }
@@ -297,7 +303,6 @@ struct Legend {
     top_left: Coord,
 }
 
-/// An input and what it does.
 pub(crate) struct LegendEntry {
     pub(crate) input: &'static str,
     pub(crate) description: &'static str,
@@ -311,7 +316,7 @@ pub(crate) struct LegendGroup {
 
 /// What a button does.
 #[derive(Clone, Copy, Debug)]
-pub enum Action {
+pub(crate) enum Action {
     NewGame,
     Restart,
     Undo,
@@ -334,7 +339,6 @@ fn is_current(action: Action, styles: Styles) -> bool {
     }
 }
 
-/// A button's action and label.
 #[derive(Clone, Copy, Debug)]
 struct ButtonSpec {
     action: Action,
@@ -435,6 +439,7 @@ fn legend_width(groups: &[LegendGroup]) -> usize {
             input_width + LEGEND_SEPARATOR.chars().count() + entry.description.chars().count()
         }
     });
+
     label_widths.chain(entry_widths).max().unwrap_or(0)
 }
 
@@ -446,6 +451,7 @@ fn legend_height(groups: &[LegendGroup]) -> usize {
         .map(|group| usize::from(group.label.is_some()) + group.entries.len())
         .sum();
     let blank_rows = groups.len().saturating_sub(1);
+
     filled_rows + blank_rows
 }
 
@@ -490,6 +496,7 @@ fn place_buttons(specs: &'static [ButtonSpec], top_left: Coord, choice: bool) ->
 fn draw_divider(canvas: &mut Canvas) {
     let board = canvas.board();
     let column = board.right() + 1 + DIVIDER_MARGIN;
+
     draw_line(canvas, (column, board.top()), (column, board.bottom()), Weight::Light);
 }
 
@@ -509,6 +516,7 @@ fn draw_header(canvas: &mut Canvas, header: &Header, open: bool, focused: bool) 
     let name_start = Coord::new(rect.left() + HEADER_NAME_OFFSET, row);
     let name = format!(" {} ", header.name);
     canvas.draw_text_marked(name_start, &name, focused.then_some(Mark::Bold));
+
     canvas.draw_text((rect.right(), row), if open { "▲" } else { "▼" });
 }
 
@@ -518,15 +526,18 @@ fn draw_legend(canvas: &mut Canvas, legend: &Legend) {
     let input_width = widest_legend_input(legend.groups);
     let start_column = legend.top_left.x;
     let mut row = legend.top_left.y;
+
     for (index, group) in legend.groups.iter().enumerate() {
         // Add a blank row above every group but the first.
         if index > 0 {
             row += 1;
         }
+
         if let Some(label) = group.label {
             canvas.draw_text_marked((start_column, row), label, Some(Mark::Reversed));
             row += 1;
         }
+
         for entry in group.entries {
             let text = if entry.description.is_empty() {
                 entry.input.to_string()
@@ -557,6 +568,7 @@ fn draw_button(
         Weight::Light
     };
     draw_rect_outline(canvas, rect, weight);
+
     let label_start = Coord::new(rect.left() + 1, rect.top() + 1);
     let label = if button.choice {
         let tick = if is_current(button.spec.action, styles) {
@@ -569,8 +581,9 @@ fn draw_button(
         format!(" {} ", button.spec.label)
     };
     canvas.draw_text_marked(label_start, &label, has_cursor.then_some(Mark::Bold));
+
     if !available(button.spec.action, availability) {
-        canvas.mark_dimmed_region(rect.coords());
+        canvas.mark_region(rect.coords(), Mark::Dimmed);
     }
 }
 
@@ -617,8 +630,8 @@ mod tests {
         assert_eq!(menu().size().height, 7);
     }
 
-    /// Clicking a header opens the tab, which answers no action and
-    /// makes room for the body.
+    /// Clicking a header returns no action and opens the tab, making room
+    /// for its body.
     #[test]
     fn clicking_a_header_opens_the_tab() {
         let mut menu = menu();

@@ -12,7 +12,7 @@ use crossterm::style::{Attribute, SetAttribute};
 use std::borrow::Cow;
 use std::cmp::max;
 
-pub fn render_game(
+pub(crate) fn render_game(
     puzzle: &NetPuzzle,
     styles: Styles,
     menu: &Menu,
@@ -24,10 +24,10 @@ pub fn render_game(
     let mut canvas = Canvas::new(dimensions, menu);
 
     draw_grid_lines(&mut canvas, dimensions);
-    draw_wires_and_endpoints(&mut canvas, &puzzle.tiles, dimensions);
+    draw_wires_and_endpoints(&mut canvas, &puzzle.tiles);
     draw_source(&mut canvas, puzzle.source);
-    draw_barriers(&mut canvas, &puzzle.tiles, dimensions);
-    draw_locked(&mut canvas, &puzzle.tiles, dimensions, styles.lock);
+    draw_barriers(&mut canvas, &puzzle.tiles);
+    draw_locked(&mut canvas, &puzzle.tiles, styles.lock);
     draw_cursor(&mut canvas, puzzle.cursor, styles.cursor);
     // The frame is what marks the board as focused.
     if !menu.has_focus() {
@@ -52,7 +52,7 @@ fn puzzle_relative_to_origin(puzzle: &NetPuzzle) -> Cow<'_, NetPuzzle> {
     let dimensions = puzzle.dimensions;
     Cow::Owned(NetPuzzle {
         dimensions,
-        tiles: shift_tiles_by_origin(&puzzle.tiles, dimensions, origin),
+        tiles: shift_tiles_by_origin(&puzzle.tiles, origin),
         cursor: cursor_relative_to_origin(puzzle.cursor, dimensions, origin),
         source: relative_to_origin(puzzle.source, dimensions, origin),
         origin,
@@ -76,11 +76,10 @@ fn cursor_relative_to_origin(
 
 /// Shifts `tiles` by `origin`, the same transform net.c's own redraw
 /// applies for a moved viewport origin.
-fn shift_tiles_by_origin(
-    tiles: &Tiles,
-    (width, height): GridDimensions,
-    (origin_x, origin_y): TileCoord,
-) -> Tiles {
+fn shift_tiles_by_origin(tiles: &Tiles, (origin_x, origin_y): TileCoord) -> Tiles {
+    let height = tiles.len();
+    let width = tiles[0].len();
+
     (0..height)
         .map(|viewport_y| {
             let y = (viewport_y + origin_y) % height;
@@ -121,12 +120,7 @@ const BLANK: Code = [Weight::None; 4];
 /// Elementwise max of two weight codes. The stronger arm wins wherever
 /// two draws overlap.
 fn combine(a: Code, b: Code) -> Code {
-    [
-        max(a[0], b[0]),
-        max(a[1], b[1]),
-        max(a[2], b[2]),
-        max(a[3], b[3]),
-    ]
+    [max(a[0], b[0]), max(a[1], b[1]), max(a[2], b[2]), max(a[3], b[3])]
 }
 
 /// Returns the Unicode glyph based on the arm-weight combination.
@@ -280,8 +274,8 @@ impl Size {
 /// A rectangular area of cells.
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct Rect {
-    pub(crate) top_left: Coord,
-    pub(crate) size: Size,
+    top_left: Coord,
+    size: Size,
 }
 
 impl Rect {
@@ -347,6 +341,7 @@ impl Rect {
     pub(crate) fn coords(self) -> impl Iterator<Item = Coord> {
         let Coord { x: left, y: top } = self.top_left;
         let Size { width, height } = self.size;
+
         (top..top + height).flat_map(move |y| (left..left + width).map(move |x| Coord::new(x, y)))
     }
 }
@@ -372,7 +367,7 @@ const TILE_WIDTH: usize = 5;
 /// Rows per tile: two shared border rows plus one center row.
 const TILE_HEIGHT: usize = 3;
 
-/// Addressing a tile's contents can be done relative to the tile: the tile
+/// Addressing a tile's contents can be done relative to the tile. The tile
 /// is given as `(tile_x, tile_y)`, and the offset within it as a
 /// quarter-step `offset_x` across (0..TILE_WIDTH) and a half-step
 /// `offset_y` down (0..TILE_HEIGHT), overlapping by one step with each
@@ -380,12 +375,13 @@ const TILE_HEIGHT: usize = 3;
 fn tile_offset_to_coord((tile_x, tile_y): TileCoord, (offset_x, offset_y): Offset) -> Coord {
     let x = GRID_OFFSET_X + (TILE_WIDTH - 1) * tile_x + offset_x;
     let y = GRID_OFFSET_Y + (TILE_HEIGHT - 1) * tile_y + offset_y;
+
     Coord::new(x, y)
 }
 
 /// The inverse of `tile_offset_to_coord`: which tile a screen coordinate
-/// falls in, and its offset within that tile. `None` if the coordinate
-/// is outside the grid entirely.
+/// falls in, and its offset within that tile, or `None` if the
+/// coordinate is outside the grid entirely.
 fn coord_to_tile_offset(
     coord: Coord,
     (width, height): GridDimensions,
@@ -405,6 +401,7 @@ fn coord_to_tile_offset(
 
     let tile = (relative_x / (TILE_WIDTH - 1), relative_y / (TILE_HEIGHT - 1));
     let offset = (relative_x % (TILE_WIDTH - 1), relative_y % (TILE_HEIGHT - 1));
+
     Some((tile, offset))
 }
 
@@ -412,11 +409,12 @@ fn coord_to_tile_offset(
 /// screen coordinate: just the one tile for a content cell or an
 /// outer grid edge, two for a border shared between neighbours, or up
 /// to four for a junction.
-pub fn tiles_at(position: impl Into<Coord>, dimensions: GridDimensions) -> Vec<TileCoord> {
+pub(crate) fn tiles_at(position: impl Into<Coord>, dimensions: GridDimensions) -> Vec<TileCoord> {
     let Some((tile, (offset_x, offset_y))) = coord_to_tile_offset(position.into(), dimensions)
     else {
         return Vec::new();
     };
+
     let (tile_x, tile_y) = tile;
 
     let on_border_column = offset_x == 0;
@@ -448,6 +446,10 @@ pub fn tiles_at(position: impl Into<Coord>, dimensions: GridDimensions) -> Vec<T
 // top_left ─────►┌───┐◄─── top_right
 // left_side ────►│abc│◄─── right_side
 // bottom_left ──►└───┘◄─── bottom_right
+//                  ▲
+//                  │
+//             bottom_mid
+//
 fn top_left(tile_coord: TileCoord) -> Coord {
     tile_offset_to_coord(tile_coord, (0, 0))
 }
@@ -475,6 +477,9 @@ fn right_side(tile_coord: TileCoord) -> Coord {
 fn bottom_left(tile_coord: TileCoord) -> Coord {
     tile_offset_to_coord(tile_coord, (0, TILE_HEIGHT - 1))
 }
+fn bottom_mid(tile_coord: TileCoord) -> Coord {
+    tile_offset_to_coord(tile_coord, (2, TILE_HEIGHT - 1))
+}
 fn bottom_right(tile_coord: TileCoord) -> Coord {
     tile_offset_to_coord(tile_coord, (TILE_WIDTH - 1, TILE_HEIGHT - 1))
 }
@@ -498,6 +503,12 @@ fn top_border_middle(tile: TileCoord) -> impl Iterator<Item = Coord> {
     Rect::new(tile_offset_to_coord(tile, (1, 0)), Size::new(TILE_WIDTH - 2, 1)).coords()
 }
 
+/// The tile's bottom border, excluding its left and right corners.
+fn bottom_border_middle(tile: TileCoord) -> impl Iterator<Item = Coord> {
+    Rect::new(tile_offset_to_coord(tile, (1, TILE_HEIGHT - 1)), Size::new(TILE_WIDTH - 2, 1))
+        .coords()
+}
+
 /// One screen coordinate: either an accumulated `Code` segment (resolved to
 /// a box-drawing character via `glyph()`), or a literal marker character
 /// for content that isn't expressible as arm weights at all, like the
@@ -508,11 +519,22 @@ enum Cell {
     Marker(char),
 }
 
-/// The ways text can be marked.
+/// The ways a position can be marked.
 #[derive(Clone, Copy)]
 pub(crate) enum Mark {
     Bold,
+    Dimmed,
     Reversed,
+}
+
+/// The marks a position carries.
+#[derive(Clone, Copy, Default)]
+struct Marks {
+    /// Whatever has focus.
+    bold: bool,
+    /// A disabled button.
+    dimmed: bool,
+    reversed: bool,
 }
 
 /// A dense grid of `Cell`, one per screen coordinate, initialized to a
@@ -520,16 +542,9 @@ pub(crate) enum Mark {
 /// passed to `new()`.
 pub(crate) struct Canvas {
     cells: Vec<Vec<Cell>>,
-    /// Which positions render in reverse video, independent of `cells`'
-    /// own content.
-    reversed: Vec<Vec<bool>>,
-    /// Which positions render dimmed (a disabled button), independent
-    /// of `cells`' own content.
-    dimmed: Vec<Vec<bool>>,
-    /// Which positions render bold (whatever has focus), independent
-    /// of `cells`' own content.
-    bold: Vec<Vec<bool>>,
-    pub(crate) frame: Rect,
+    /// How each position renders, independent of `cells`' own content.
+    marks: Vec<Vec<Marks>>,
+    frame: Rect,
     /// Where the status bar's text begins: the frame's left edge, on
     /// the row just below it.
     status_bar_start: Coord,
@@ -538,6 +553,7 @@ pub(crate) struct Canvas {
 /// The frame enclosing the grid.
 pub(crate) fn grid_frame((width, height): GridDimensions) -> Rect {
     assert!(width > 0 && height > 0, "grid_frame() called with a zero-tile board");
+
     let grid = Rect::from_corners(top_left((0, 0)), bottom_right((width - 1, height - 1)));
 
     // The frame's border sits FRAME_MARGIN cells clear of the grid
@@ -566,9 +582,7 @@ impl Canvas {
 
         Canvas {
             cells: vec![vec![Cell::Segment(BLANK); canvas_size.width]; canvas_size.height],
-            reversed: vec![vec![false; canvas_size.width]; canvas_size.height],
-            dimmed: vec![vec![false; canvas_size.width]; canvas_size.height],
-            bold: vec![vec![false; canvas_size.width]; canvas_size.height],
+            marks: vec![vec![Marks::default(); canvas_size.width]; canvas_size.height],
             frame,
             status_bar_start,
         }
@@ -603,7 +617,7 @@ impl Canvas {
 
     /// Draws each character of `text` in order, starting at `start` and
     /// advancing one column per character. Characters past the canvas's
-    /// right edge are dropped rather than panicking.
+    /// right edge are dropped.
     pub(crate) fn draw_text(&mut self, start: impl Into<Coord>, text: &str) {
         let start = start.into();
         for (offset_x, c) in text.chars().enumerate() {
@@ -623,24 +637,29 @@ impl Canvas {
         }
     }
 
-    /// Sets reverse video at this position. Marking it again from another
-    /// source of the same kind leaves it reversed.
-    fn mark_reversed(&mut self, coord: impl Into<Coord>) {
+    fn mark(&mut self, coord: impl Into<Coord>, mark: Mark) {
         let coord = coord.into();
-        self.reversed[coord.y][coord.x] = true;
-    }
+        let marks = &mut self.marks[coord.y][coord.x];
 
-    fn mark_reversed_region(&mut self, coords: impl IntoIterator<Item = Coord>) {
-        for coord in coords {
-            self.mark_reversed(coord);
+        match mark {
+            Mark::Bold => marks.bold = true,
+            Mark::Dimmed => marks.dimmed = true,
+            Mark::Reversed => marks.reversed = true,
         }
     }
 
-    /// Toggles reverse video at this position. Used only by the cursor:
-    /// landing on an already-reversed locked tile cancels back to plain.
+    pub(crate) fn mark_region(&mut self, coords: impl IntoIterator<Item = Coord>, mark: Mark) {
+        for coord in coords {
+            self.mark(coord, mark);
+        }
+    }
+
+    /// Toggles reverse video at this position. Used only by the cursor,
+    /// where landing on an already-reversed locked tile cancels back to plain.
     fn toggle_reversed(&mut self, coord: impl Into<Coord>) {
         let coord = coord.into();
-        self.reversed[coord.y][coord.x] = !self.reversed[coord.y][coord.x];
+        let marks = &mut self.marks[coord.y][coord.x];
+        marks.reversed = !marks.reversed;
     }
 
     fn toggle_reversed_region(&mut self, coords: impl IntoIterator<Item = Coord>) {
@@ -651,31 +670,7 @@ impl Canvas {
 
     fn is_reversed(&self, coord: impl Into<Coord>) -> bool {
         let coord = coord.into();
-        self.reversed[coord.y][coord.x]
-    }
-
-    /// Sets dimmed rendering at this position.
-    fn mark_dimmed(&mut self, coord: impl Into<Coord>) {
-        let coord = coord.into();
-        self.dimmed[coord.y][coord.x] = true;
-    }
-
-    pub(crate) fn mark_dimmed_region(&mut self, coords: impl IntoIterator<Item = Coord>) {
-        for coord in coords {
-            self.mark_dimmed(coord);
-        }
-    }
-
-    /// Sets bold rendering at this position.
-    fn mark_bold(&mut self, coord: impl Into<Coord>) {
-        let coord = coord.into();
-        self.bold[coord.y][coord.x] = true;
-    }
-
-    fn mark_bold_region(&mut self, coords: impl IntoIterator<Item = Coord>) {
-        for coord in coords {
-            self.mark_bold(coord);
-        }
+        self.marks[coord.y][coord.x].reversed
     }
 
     /// Draws text, marking every cell it covers.
@@ -687,22 +682,23 @@ impl Canvas {
     ) {
         let start = start.into();
         self.draw_text(start, text);
+
         let covered = Rect::row(start, text.chars().count());
-        match mark {
-            Some(Mark::Bold) => self.mark_bold_region(covered.coords()),
-            Some(Mark::Reversed) => self.mark_reversed_region(covered.coords()),
-            None => {}
+        if let Some(mark) = mark {
+            self.mark_region(covered.coords(), mark);
         }
     }
 
     /// How strongly a position renders. A terminal has one intensity to
-    /// set, so where a position is both dim and bold, dim wins: being
+    /// set, so where a position is both dim and bold, dim wins, since being
     /// unavailable outranks having focus.
     fn intensity_at(&self, coord: impl Into<Coord>) -> Intensity {
         let coord = coord.into();
-        if self.dimmed[coord.y][coord.x] {
+        let marks = self.marks[coord.y][coord.x];
+
+        if marks.dimmed {
             Intensity::Dim
-        } else if self.bold[coord.y][coord.x] {
+        } else if marks.bold {
             Intensity::Bold
         } else {
             Intensity::Normal
@@ -711,8 +707,8 @@ impl Canvas {
 }
 
 /// Draws a line of the given weight from `start` to `end`, inclusive, along
-/// whichever of column or row they share. `start` and `end` don't need to
-/// be given in order. Each endpoint only gets the arm pointing back into
+/// whichever of column or row they share. The two ends don't need to be
+/// given in order. Each endpoint only gets the arm pointing back into
 /// the line, not the one pointing past it. Panics if `start` and `end` are
 /// neither on the same row nor the same column.
 pub(crate) fn draw_line(
@@ -725,12 +721,14 @@ pub(crate) fn draw_line(
     if start == end {
         return;
     }
+
     if start.x > end.x {
         std::mem::swap(&mut start.x, &mut end.x);
     }
     if start.y > end.y {
         std::mem::swap(&mut start.y, &mut end.y);
     }
+
     // The line starts and ends in the middle of a cell, so each endpoint stops short of a full arm.
     if start.y == end.y {
         for x in start.x..=end.x {
@@ -756,6 +754,7 @@ fn draw_grid_lines(canvas: &mut Canvas, (width, height): GridDimensions) {
     for tile_y in 0..=height {
         draw_line(canvas, top_left((0, tile_y)), top_left((width, tile_y)), Weight::Light);
     }
+
     for tile_x in 0..=width {
         draw_line(canvas, top_left((tile_x, 0)), top_left((tile_x, height)), Weight::Light);
     }
@@ -775,10 +774,9 @@ fn mark_tile(canvas: &mut Canvas, tile_coord: TileCoord, marker: [char; 3]) {
 /// Draws the wires and endpoint markers on top of the grid lines, light
 /// where unpowered and heavy where carrying power. A tile with exactly one
 /// arm becomes an endpoint.
-fn draw_wires_and_endpoints(canvas: &mut Canvas, tiles: &Tiles, (width, height): GridDimensions) {
-    for tile_y in 0..height {
-        for tile_x in 0..width {
-            let tile = tiles[tile_y][tile_x];
+fn draw_wires_and_endpoints(canvas: &mut Canvas, tiles: &Tiles) {
+    for (tile_y, tile_row) in tiles.iter().enumerate() {
+        for (tile_x, tile) in tile_row.iter().enumerate() {
             let wires = tile.wires;
             let is_powered = tile.powered;
             let weight = if is_powered {
@@ -790,7 +788,7 @@ fn draw_wires_and_endpoints(canvas: &mut Canvas, tiles: &Tiles, (width, height):
             let mut arm_count = 0;
 
             if wires.right {
-                draw_line(canvas, center, left_side((tile_x + 1, tile_y)), weight);
+                draw_line(canvas, center, right_side((tile_x, tile_y)), weight);
                 arm_count += 1;
             }
             if wires.up {
@@ -802,7 +800,7 @@ fn draw_wires_and_endpoints(canvas: &mut Canvas, tiles: &Tiles, (width, height):
                 arm_count += 1;
             }
             if wires.down {
-                draw_line(canvas, center, top_mid((tile_x, tile_y + 1)), weight);
+                draw_line(canvas, center, bottom_mid((tile_x, tile_y)), weight);
                 arm_count += 1;
             }
 
@@ -833,7 +831,7 @@ pub(crate) struct Styles {
 
 /// How the keyboard cursor's tile is visually marked.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
-pub enum CursorStyle {
+pub(crate) enum CursorStyle {
     /// A heavy-weight box drawn around the tile's own border.
     #[default]
     Outline,
@@ -849,6 +847,7 @@ fn draw_cursor(canvas: &mut Canvas, cursor: Cursor, style: CursorStyle) {
     if !cursor.visible {
         return;
     }
+
     match style {
         CursorStyle::Outline => {
             draw_rect_outline(canvas, tile_rect(cursor.position), Weight::Heavy);
@@ -864,7 +863,11 @@ fn draw_cursor(canvas: &mut Canvas, cursor: Cursor, style: CursorStyle) {
 
 /// How a locked tile is visually marked.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
-pub enum LockStyle {
+#[expect(
+    clippy::enum_variant_names,
+    reason = "matches CursorStyle's names for the same styles"
+)]
+pub(crate) enum LockStyle {
     /// Reverse video over just the tile's content cells.
     ReverseTileCenter,
     /// Reverse video over the entire tile: all four of its borders and
@@ -878,74 +881,64 @@ pub enum LockStyle {
 }
 
 /// Highlights every locked tile.
-fn draw_locked(canvas: &mut Canvas, tiles: &Tiles, dimensions: GridDimensions, style: LockStyle) {
+fn draw_locked(canvas: &mut Canvas, tiles: &Tiles, style: LockStyle) {
     match style {
-        LockStyle::ReverseTileCenter => draw_locked_content(canvas, tiles, dimensions),
-        LockStyle::ReverseTileFull => draw_locked_full(canvas, tiles, dimensions),
+        LockStyle::ReverseTileCenter => draw_locked_content(canvas, tiles),
+        LockStyle::ReverseTileFull => draw_locked_full(canvas, tiles),
         LockStyle::ReverseTileConnected => {
-            draw_locked_content(canvas, tiles, dimensions);
-            draw_locked_horizontal_connections(canvas, tiles, dimensions);
-            draw_locked_vertical_connections(canvas, tiles, dimensions);
-            draw_locked_junctions(canvas, tiles, dimensions);
+            draw_locked_content(canvas, tiles);
+            draw_locked_connections(canvas, tiles);
+            draw_locked_junctions(canvas, tiles);
         }
     }
 }
 
 /// Reverses every locked tile's content cells.
-fn draw_locked_content(canvas: &mut Canvas, tiles: &Tiles, (width, height): GridDimensions) {
-    for tile_y in 0..height {
-        for tile_x in 0..width {
-            if tiles[tile_y][tile_x].locked {
-                canvas.mark_reversed_region(tile_content_coords((tile_x, tile_y)));
+fn draw_locked_content(canvas: &mut Canvas, tiles: &Tiles) {
+    for (tile_y, tile_row) in tiles.iter().enumerate() {
+        for (tile_x, tile) in tile_row.iter().enumerate() {
+            if tile.locked {
+                canvas.mark_region(tile_content_coords((tile_x, tile_y)), Mark::Reversed);
             }
         }
     }
 }
 
 /// Reverses every locked tile's entire footprint.
-fn draw_locked_full(canvas: &mut Canvas, tiles: &Tiles, (width, height): GridDimensions) {
-    for tile_y in 0..height {
-        for tile_x in 0..width {
-            if tiles[tile_y][tile_x].locked {
-                canvas.mark_reversed_region(tile_full_coords((tile_x, tile_y)));
+fn draw_locked_full(canvas: &mut Canvas, tiles: &Tiles) {
+    for (tile_y, tile_row) in tiles.iter().enumerate() {
+        for (tile_x, tile) in tile_row.iter().enumerate() {
+            if tile.locked {
+                canvas.mark_region(tile_full_coords((tile_x, tile_y)), Mark::Reversed);
             }
         }
     }
 }
 
-/// Reverses each vertical border between two horizontally adjacent
-/// tiles, or against the grid's left/right edge, wherever every tile
-/// touching it is locked.
-fn draw_locked_horizontal_connections(
-    canvas: &mut Canvas,
-    tiles: &Tiles,
-    (width, height): GridDimensions,
-) {
-    for tile_y in 0..height {
-        for border_x in 0..=width {
-            let left_locked_or_edge = border_x == 0 || tiles[tile_y][border_x - 1].locked;
-            let right_locked_or_edge = border_x == width || tiles[tile_y][border_x].locked;
-            if left_locked_or_edge && right_locked_or_edge {
-                canvas.mark_reversed(left_side((border_x, tile_y)));
-            }
-        }
-    }
-}
+/// Reverses each border between two adjacent tiles, or against the
+/// grid's edge, wherever every tile touching it is locked.
+fn draw_locked_connections(canvas: &mut Canvas, tiles: &Tiles) {
+    let height = tiles.len();
 
-/// Reverses each horizontal border between two vertically adjacent
-/// tiles, or against the grid's top/bottom edge, wherever every tile
-/// touching it is locked.
-fn draw_locked_vertical_connections(
-    canvas: &mut Canvas,
-    tiles: &Tiles,
-    (width, height): GridDimensions,
-) {
-    for tile_x in 0..width {
-        for border_y in 0..=height {
-            let top_locked_or_edge = border_y == 0 || tiles[border_y - 1][tile_x].locked;
-            let bottom_locked_or_edge = border_y == height || tiles[border_y][tile_x].locked;
-            if top_locked_or_edge && bottom_locked_or_edge {
-                canvas.mark_reversed_region(top_border_middle((tile_x, border_y)));
+    for (tile_y, tile_row) in tiles.iter().enumerate() {
+        let width = tile_row.len();
+
+        for (tile_x, tile) in tile_row.iter().enumerate() {
+            if !tile.locked {
+                continue;
+            }
+
+            if tile_x == 0 || tile_row[tile_x - 1].locked {
+                canvas.mark(left_side((tile_x, tile_y)), Mark::Reversed);
+            }
+            if tile_x == width - 1 {
+                canvas.mark(right_side((tile_x, tile_y)), Mark::Reversed);
+            }
+            if tile_y == 0 || tiles[tile_y - 1][tile_x].locked {
+                canvas.mark_region(top_border_middle((tile_x, tile_y)), Mark::Reversed);
+            }
+            if tile_y == height - 1 {
+                canvas.mark_region(bottom_border_middle((tile_x, tile_y)), Mark::Reversed);
             }
         }
     }
@@ -953,7 +946,10 @@ fn draw_locked_vertical_connections(
 
 /// Reverses each junction shared by up to four tiles wherever every tile
 /// touching it is locked.
-fn draw_locked_junctions(canvas: &mut Canvas, tiles: &Tiles, (width, height): GridDimensions) {
+fn draw_locked_junctions(canvas: &mut Canvas, tiles: &Tiles) {
+    let height = tiles.len();
+    let width = tiles[0].len();
+
     for junction_y in 0..=height {
         for junction_x in 0..=width {
             let top_left_locked_or_edge =
@@ -964,12 +960,13 @@ fn draw_locked_junctions(canvas: &mut Canvas, tiles: &Tiles, (width, height): Gr
                 junction_x == 0 || junction_y == height || tiles[junction_y][junction_x - 1].locked;
             let bottom_right_locked_or_edge =
                 junction_x == width || junction_y == height || tiles[junction_y][junction_x].locked;
+
             if top_left_locked_or_edge
                 && top_right_locked_or_edge
                 && bottom_left_locked_or_edge
                 && bottom_right_locked_or_edge
             {
-                canvas.mark_reversed(top_left((junction_x, junction_y)));
+                canvas.mark(top_left((junction_x, junction_y)), Mark::Reversed);
             }
         }
     }
@@ -979,22 +976,23 @@ fn draw_locked_junctions(canvas: &mut Canvas, tiles: &Tiles, (width, height): Gr
 /// heavy weight across the border they occupy. A non-wrapping grid
 /// carries barriers along its whole outer boundary, so that ring falls
 /// out of the same tile data as any interior wall.
-fn draw_barriers(canvas: &mut Canvas, tiles: &Tiles, (width, height): GridDimensions) {
-    for tile_y in 0..height {
-        for tile_x in 0..width {
-            let tile = (tile_x, tile_y);
-            let barriers = tiles[tile_y][tile_x].barriers;
+fn draw_barriers(canvas: &mut Canvas, tiles: &Tiles) {
+    for (tile_y, tile_row) in tiles.iter().enumerate() {
+        for (tile_x, tile) in tile_row.iter().enumerate() {
+            let tile_coord = (tile_x, tile_y);
+            let barriers = tile.barriers;
+
             if barriers.up {
-                draw_line(canvas, top_left(tile), top_right(tile), Weight::Heavy);
+                draw_line(canvas, top_left(tile_coord), top_right(tile_coord), Weight::Heavy);
             }
             if barriers.down {
-                draw_line(canvas, bottom_left(tile), bottom_right(tile), Weight::Heavy);
+                draw_line(canvas, bottom_left(tile_coord), bottom_right(tile_coord), Weight::Heavy);
             }
             if barriers.left {
-                draw_line(canvas, top_left(tile), bottom_left(tile), Weight::Heavy);
+                draw_line(canvas, top_left(tile_coord), bottom_left(tile_coord), Weight::Heavy);
             }
             if barriers.right {
-                draw_line(canvas, top_right(tile), bottom_right(tile), Weight::Heavy);
+                draw_line(canvas, top_right(tile_coord), bottom_right(tile_coord), Weight::Heavy);
             }
         }
     }
@@ -1003,6 +1001,7 @@ fn draw_barriers(canvas: &mut Canvas, tiles: &Tiles, (width, height): GridDimens
 /// The outline runs through the centers of `Rect`'s outermost cells.
 pub(crate) fn draw_rect_outline(canvas: &mut Canvas, rect: Rect, weight: Weight) {
     let (left, top, right, bottom) = (rect.left(), rect.top(), rect.right(), rect.bottom());
+
     draw_line(canvas, (left, top), (right, top), weight);
     draw_line(canvas, (left, bottom), (right, bottom), weight);
     draw_line(canvas, (left, top), (left, bottom), weight);
@@ -1046,6 +1045,7 @@ fn flatten_to_lines(canvas: &Canvas) -> Vec<String> {
         let mut line = String::with_capacity(canvas.width());
         let mut reversed = false;
         let mut active_intensity = Intensity::Normal;
+
         for x in 0..canvas.width() {
             if canvas.is_reversed((x, y)) != reversed {
                 reversed = !reversed;
@@ -1056,19 +1056,23 @@ fn flatten_to_lines(canvas: &Canvas) -> Vec<String> {
                 };
                 line.push_str(&SetAttribute(attribute).to_string());
             }
+
             let cell_intensity = canvas.intensity_at((x, y));
             if cell_intensity != active_intensity {
                 active_intensity = cell_intensity;
                 line.push_str(&SetAttribute(active_intensity.as_attribute()).to_string());
             }
+
             line.push(canvas.char_at((x, y)));
         }
+
         if reversed {
             line.push_str(&SetAttribute(Attribute::NoReverse).to_string());
         }
         if active_intensity != Intensity::Normal {
             line.push_str(&SetAttribute(Attribute::NormalIntensity).to_string());
         }
+
         lines.push(line);
     }
     lines
@@ -1207,9 +1211,10 @@ mod tests {
     #[test]
     fn render_game_does_not_panic_across_many_generated_boards() {
         for _ in 0..100 {
-            let puzzle = crate::net::generate();
+            let session = crate::net::Session::new();
+            let puzzle = session.puzzle();
             let menu = menu(puzzle.dimensions);
-            render_game(&puzzle, Styles::default(), &menu, nothing_dimmed());
+            render_game(puzzle, Styles::default(), &menu, nothing_dimmed());
         }
     }
 
@@ -1254,7 +1259,7 @@ mod tests {
     #[test]
     fn flatten_wraps_reversed_cells_in_escape_codes() {
         let mut canvas = canvas((1, 1));
-        canvas.mark_reversed((0, 0));
+        canvas.mark((0, 0), Mark::Reversed);
 
         let lines = flatten_to_lines(&canvas);
         assert!(lines[0].starts_with(&SetAttribute(Attribute::Reverse).to_string()));
@@ -1264,7 +1269,7 @@ mod tests {
     #[test]
     fn flatten_wraps_dimmed_cells_in_escape_codes() {
         let mut canvas = canvas((1, 1));
-        canvas.mark_dimmed_region([Coord::new(0, 0)]);
+        canvas.mark_region([Coord::new(0, 0)], Mark::Dimmed);
 
         let lines = flatten_to_lines(&canvas);
         assert!(lines[0].starts_with(&SetAttribute(Attribute::Dim).to_string()));
@@ -1275,10 +1280,11 @@ mod tests {
     /// carries the dim attribute only when one of them is unavailable.
     #[test]
     fn render_game_dims_unavailable_menu_buttons() {
-        let puzzle = crate::net::generate();
+        let session = crate::net::Session::new();
+        let puzzle = session.puzzle();
         let dim = SetAttribute(Attribute::Dim).to_string();
         let menu = menu(puzzle.dimensions);
-        let render = |availability| render_game(&puzzle, Styles::default(), &menu, availability);
+        let render = |availability| render_game(puzzle, Styles::default(), &menu, availability);
 
         let fresh = ActionAvailability { can_undo: false, can_redo: false };
         let mid_game = ActionAvailability { can_undo: true, can_redo: true };
@@ -1288,10 +1294,10 @@ mod tests {
     }
 
     #[test]
-    fn mark_reversed_twice_stays_reversed() {
+    fn marking_reversed_twice_stays_reversed() {
         let mut canvas = canvas((1, 1));
-        canvas.mark_reversed((0, 0));
-        canvas.mark_reversed((0, 0));
+        canvas.mark((0, 0), Mark::Reversed);
+        canvas.mark((0, 0), Mark::Reversed);
 
         assert!(canvas.is_reversed((0, 0)));
     }
@@ -1306,9 +1312,9 @@ mod tests {
     }
 
     #[test]
-    fn toggle_reversed_cancels_a_prior_mark_reversed() {
+    fn toggle_reversed_cancels_a_prior_reversed_mark() {
         let mut canvas = canvas((1, 1));
-        canvas.mark_reversed((0, 0));
+        canvas.mark((0, 0), Mark::Reversed);
         canvas.toggle_reversed((0, 0));
 
         assert!(!canvas.is_reversed((0, 0)));
@@ -1328,7 +1334,7 @@ mod tests {
         let target_tile = (1, 1);
         let tiles = grid_with_locked(dimensions, &[target_tile, target_tile.right()]);
         let mut canvas = canvas(dimensions);
-        draw_locked(&mut canvas, &tiles, dimensions, LockStyle::ReverseTileConnected);
+        draw_locked(&mut canvas, &tiles, LockStyle::ReverseTileConnected);
 
         assert!(canvas.is_reversed(right_side(target_tile)));
     }
@@ -1339,7 +1345,7 @@ mod tests {
         let target_tile = (1, 1);
         let tiles = grid_with_locked(dimensions, &[target_tile, target_tile.right()]);
         let mut canvas = canvas(dimensions);
-        draw_locked(&mut canvas, &tiles, dimensions, LockStyle::ReverseTileConnected);
+        draw_locked(&mut canvas, &tiles, LockStyle::ReverseTileConnected);
 
         assert!(!canvas.is_reversed(top_mid(target_tile)));
     }
@@ -1350,11 +1356,39 @@ mod tests {
         let target_tile = (0, 0);
         let tiles = grid_with_locked(dimensions, &[target_tile]);
         let mut canvas = canvas(dimensions);
-        draw_locked(&mut canvas, &tiles, dimensions, LockStyle::ReverseTileConnected);
+        draw_locked(&mut canvas, &tiles, LockStyle::ReverseTileConnected);
 
         assert!(canvas.is_reversed(top_mid(target_tile)));
         assert!(canvas.is_reversed(left_side(target_tile)));
         assert!(!canvas.is_reversed(right_side(target_tile)));
+    }
+
+    /// Only a tile in the last row closes its bottom border against the
+    /// grid's edge.
+    #[test]
+    fn draw_locked_connected_reverses_border_against_the_bottom_edge() {
+        let dimensions = (3, 3);
+        let target_tile = (0, 2);
+        let tiles = grid_with_locked(dimensions, &[target_tile, (1, 1)]);
+        let mut canvas = canvas(dimensions);
+        draw_locked(&mut canvas, &tiles, LockStyle::ReverseTileConnected);
+
+        assert!(bottom_border_middle(target_tile).all(|coord| canvas.is_reversed(coord)));
+        assert!(!bottom_border_middle((1, 1)).any(|coord| canvas.is_reversed(coord)));
+    }
+
+    /// Only a tile in the last column closes its right border against the
+    /// grid's edge.
+    #[test]
+    fn draw_locked_connected_reverses_border_against_the_right_edge() {
+        let dimensions = (3, 3);
+        let target_tile = (2, 0);
+        let tiles = grid_with_locked(dimensions, &[target_tile, (1, 1)]);
+        let mut canvas = canvas(dimensions);
+        draw_locked(&mut canvas, &tiles, LockStyle::ReverseTileConnected);
+
+        assert!(canvas.is_reversed(right_side(target_tile)));
+        assert!(!canvas.is_reversed(right_side((1, 1))));
     }
 
     #[test]
@@ -1363,7 +1397,7 @@ mod tests {
         let target_tile = (1, 1);
         let tiles = grid_with_locked(dimensions, &[target_tile, target_tile.right()]);
         let mut canvas = canvas(dimensions);
-        draw_locked(&mut canvas, &tiles, dimensions, LockStyle::ReverseTileConnected);
+        draw_locked(&mut canvas, &tiles, LockStyle::ReverseTileConnected);
 
         // The corners of the shared border also touch the unlocked
         // tiles above and below, and stay untouched.
@@ -1385,7 +1419,7 @@ mod tests {
             ],
         );
         let mut canvas = canvas(dimensions);
-        draw_locked(&mut canvas, &tiles, dimensions, LockStyle::ReverseTileConnected);
+        draw_locked(&mut canvas, &tiles, LockStyle::ReverseTileConnected);
 
         assert!(canvas.is_reversed(bottom_right(target_tile)));
     }
@@ -1400,9 +1434,9 @@ mod tests {
         assert!(!canvas.is_reversed(center_mid((1, 1))));
     }
 
-    /// A tile's `right` barrier draws on the edge it names, and
-    /// nowhere else: the two corners it doesn't touch stay the plain
-    /// light cross `draw_grid_lines` left there.
+    /// A tile's `right` barrier draws on the edge it names and nowhere
+    /// else. The two corners it doesn't touch stay the plain light cross
+    /// `draw_grid_lines` left there.
     #[test]
     fn draw_barriers_draws_on_the_named_edge_only() {
         let dimensions = (3, 3);
@@ -1411,7 +1445,7 @@ mod tests {
 
         let mut canvas = canvas(dimensions);
         draw_grid_lines(&mut canvas, dimensions);
-        draw_barriers(&mut canvas, &tiles, dimensions);
+        draw_barriers(&mut canvas, &tiles);
 
         assert_eq!(canvas.char_at(top_right((1, 1))), '╁');
         assert_eq!(canvas.char_at(bottom_right((1, 1))), '╀');
@@ -1420,9 +1454,9 @@ mod tests {
     }
 
     /// A corner tile's two boundary barriers, `up` and `left`, both end
-    /// at its top-left corner: that corner becomes a solid heavy angle
-    /// rather than just one heavy arm, and the opposite corner, which
-    /// neither barrier reaches, stays the plain light cross.
+    /// at its top-left corner. That corner becomes a solid heavy angle,
+    /// and the opposite corner, which neither barrier reaches, stays the
+    /// plain light cross.
     #[test]
     fn draw_barriers_combines_two_barriers_meeting_at_a_corner() {
         let dimensions = (3, 3);
@@ -1432,7 +1466,7 @@ mod tests {
 
         let mut canvas = canvas(dimensions);
         draw_grid_lines(&mut canvas, dimensions);
-        draw_barriers(&mut canvas, &tiles, dimensions);
+        draw_barriers(&mut canvas, &tiles);
 
         assert_eq!(canvas.char_at(top_left((0, 0))), '┏');
         assert_eq!(canvas.char_at(bottom_right((0, 0))), '┼');
@@ -1445,7 +1479,7 @@ mod tests {
 
         let mut actual = canvas(dimensions);
         draw_grid_lines(&mut actual, dimensions);
-        draw_barriers(&mut actual, &tiles, dimensions);
+        draw_barriers(&mut actual, &tiles);
 
         let mut expected = canvas(dimensions);
         draw_grid_lines(&mut expected, dimensions);

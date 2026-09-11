@@ -29,11 +29,11 @@ pub(crate) struct RawDrawingApi {
 /// `handle`.
 #[repr(C)]
 pub(crate) struct RawDrawing {
-    pub(crate) api: *const RawDrawingApi,
+    api: *const RawDrawingApi,
     pub(crate) handle: *mut c_void,
 }
 
-extern "C" {
+unsafe extern "C" {
     fn midend_new(
         fe: *mut c_void,
         ourgame: *const RawGame,
@@ -62,11 +62,12 @@ extern "C" {
     pub(crate) fn window_offset() -> c_int;
 }
 
-/// Net's rotation animation is `ROTATE_TIME` (net.c, 0.13 seconds); this
-/// is comfortably longer, so one `midend_timer` call always finishes it.
+/// Net's rotation animation is `ROTATE_TIME` (net.c, 0.13 seconds). This
+/// value is comfortably longer, so one `midend_timer` call always
+/// finishes it.
 const SKIP_ANIMATION_TIME: c_float = 1.0;
 
-/// `midend_process_key`'s return value when it signals the front end
+/// The value `midend_process_key` returns when it signals the front end
 /// should quit (puzzles.h's `PKR_QUIT`).
 const PKR_QUIT: c_int = 0;
 
@@ -78,8 +79,8 @@ pub(crate) struct Midend {
 }
 
 impl Midend {
-    /// `game` is the target puzzle's own `thegame` (e.g. `net.rs`'s).
-    /// `drapi`/`drhandle` are passed straight through to `midend_new`.
+    /// Takes the target puzzle's own `thegame` as `game` (e.g. `net.rs`'s),
+    /// and passes `drapi` and `drhandle` straight through to `midend_new`.
     pub(crate) fn new(
         game: *const RawGame,
         drapi: *const RawDrawingApi,
@@ -87,19 +88,21 @@ impl Midend {
     ) -> Midend {
         let raw = unsafe { midend_new(ptr::null_mut(), game, drapi, drhandle) };
         let raw = NonNull::new(raw).expect("midend_new returned null");
+
         Midend { raw }
     }
 
     /// Settles the mid-end on the backend's own preferred tile size
     /// (net.c's `PREFERRED_TILE_SIZE`), so `tilesize()` returns a real,
-    /// known value instead of `0`. `midend_size` shrinks its result to
-    /// fit within the given space unless it's already big enough not
-    /// to matter, so passing `c_int::MAX` guarantees the preferred size
-    /// always fits. Must run after `new_game`: it writes into the
+    /// known value instead of `0`. Passing `c_int::MAX` guarantees the
+    /// preferred size always fits, since `midend_size` shrinks its result
+    /// to fit the given space unless that space is already big enough not
+    /// to matter. Must run after `new_game`. It writes into the
     /// mid-end's drawstate, which doesn't exist until a game does.
     fn fix_tilesize(&self) {
         let mut x = c_int::MAX;
         let mut y = c_int::MAX;
+
         unsafe { midend_size(self.raw.as_ptr(), &mut x, &mut y, false, 1.0) };
     }
 
@@ -143,6 +146,7 @@ impl Midend {
     pub(crate) fn process_key(&self, button: c_int) -> bool {
         let result = unsafe { midend_process_key(self.raw.as_ptr(), 0, 0, button) };
         unsafe { midend_timer(self.raw.as_ptr(), SKIP_ANIMATION_TIME) };
+
         result != PKR_QUIT
     }
 
@@ -153,6 +157,7 @@ impl Midend {
     pub(crate) fn process_click(&self, x: c_int, y: c_int, button: c_int) -> bool {
         let result = unsafe { midend_process_key(self.raw.as_ptr(), x, y, button) };
         unsafe { midend_timer(self.raw.as_ptr(), SKIP_ANIMATION_TIME) };
+
         result != PKR_QUIT
     }
 }
@@ -163,14 +168,15 @@ impl Drop for Midend {
     }
 }
 
-extern "C" {
+unsafe extern "C" {
     fn smalloc(size: usize) -> *mut c_void;
 }
 
 /// Seeds the mid-end's RNG.
-#[no_mangle]
+#[unsafe(no_mangle)]
 extern "C" fn get_random_seed(randseed: *mut *mut c_void, randseedsize: *mut c_int) {
     let seed: u64 = rand::random();
+
     unsafe {
         let buf = smalloc(std::mem::size_of::<u64>()) as *mut u64;
         buf.write(seed);

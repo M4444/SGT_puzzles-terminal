@@ -13,6 +13,8 @@ fn main() {
 
     let mut build = cc::Build::new();
     build.define("EXPOSE_GAME_STATE", None);
+    // Match upstream, which compiles its C with -Wall but not -Wextra.
+    build.extra_warnings(false);
     for source in sources {
         build.file(source);
         println!("cargo:rerun-if-changed={source}");
