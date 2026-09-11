@@ -9,7 +9,7 @@ use crossterm::event::{
     MouseButton, MouseEvent, MouseEventKind,
 };
 use crossterm::execute;
-use crossterm::terminal::{disable_raw_mode, enable_raw_mode, Clear, ClearType};
+use crossterm::terminal::{self, disable_raw_mode, enable_raw_mode, Clear, ClearType};
 use net::{Session, TileCoord};
 use std::io::{stdout, Write};
 
@@ -41,6 +41,9 @@ impl Drop for TerminalGuard {
     fn drop(&mut self) {
         execute!(stdout(), DisableMouseCapture, Show).ok();
         disable_raw_mode().ok();
+        // Puts the shell's prompt on a fresh line.
+        print!("\r\n");
+        stdout().flush().ok();
     }
 }
 
@@ -58,8 +61,11 @@ fn main() {
         let availability =
             menu::ActionAvailability { can_undo: session.can_undo(), can_redo: session.can_redo() };
         let output = render::render_game(session.puzzle(), styles, &menu, availability);
+        // Anything past the last row would scroll the top away.
+        let (_, rows) = terminal::size().expect("failed to query terminal size");
+        let output: Vec<&str> = output.lines().take(rows.into()).collect();
         execute!(stdout(), Clear(ClearType::All), MoveTo(0, 0)).ok();
-        print!("{}\r\n", output.replace('\n', "\r\n"));
+        print!("{}", output.join("\r\n"));
         stdout().flush().ok();
 
         let event = event::read().expect("failed to read input event");
