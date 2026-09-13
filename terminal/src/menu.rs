@@ -48,11 +48,11 @@ impl Menu {
         menu
     }
 
-    /// Moves the menu so it starts at `top_left`, just right of the
-    /// board, with its divider running the board's full height.
-    pub(crate) fn place_beside_board(&mut self, top_left: Coord, board_height: usize) {
-        self.top_left = top_left;
-        self.divider_length = board_height;
+    /// Moves the menu to start just right of the board, level with its
+    /// top, with its divider running the board's full height.
+    pub(crate) fn place_beside_board(&mut self, board_rect: Rect) {
+        self.top_left = Coord::new(board_rect.right() + 1, board_rect.top());
+        self.divider_length = board_rect.bottom() - board_rect.top() + 1;
     }
 
     /// Refreshes each tab's header and any body it's showing, top to
@@ -711,7 +711,7 @@ mod tests {
     #[test]
     fn clicks_find_a_moved_menu_where_it_sits() {
         let mut menu = Menu::new();
-        menu.place_beside_board(Coord::new(25, 0), 14);
+        menu.place_beside_board(Rect::new(Coord::new(0, 0), Size::new(25, 14)));
 
         assert!(matches!(menu.click((28, 0)), Some(Action::NewGame)));
         assert!(menu.click((3, 0)).is_none());

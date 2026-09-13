@@ -21,7 +21,9 @@ pub(crate) fn render_game(
     let puzzle = puzzle_relative_to_origin(puzzle);
     let dimensions = puzzle.dimensions;
 
-    let mut canvas = Canvas::new(dimensions, menu.size());
+    let board = Board::new(dimensions);
+    let board_rect = board.rect();
+    let mut canvas = Canvas::new(board_rect, menu.size());
 
     draw_grid_lines(&mut canvas, dimensions);
     draw_wires_and_endpoints(&mut canvas, &puzzle.tiles);
@@ -31,12 +33,11 @@ pub(crate) fn render_game(
     draw_cursor(&mut canvas, puzzle.cursor, styles.cursor);
     // The frame is what marks the board as focused.
     if !menu.has_focus() {
-        draw_frame(&mut canvas);
+        draw_frame(&mut canvas, board.frame);
     }
-    draw_status_bar(&mut canvas, &puzzle.status);
+    draw_status_bar(&mut canvas, board.status_bar_start, &puzzle.status);
 
-    let board = canvas.board();
-    menu.place_beside_board(Coord::new(board.right() + 1, board.top()), board.size.height);
+    menu.place_beside_board(board_rect);
     menu.draw(&mut canvas, availability, styles);
 
     flatten_to_lines(&canvas).join("\n")
@@ -515,6 +516,39 @@ fn bottom_border_middle(tile: TileCoord) -> impl Iterator<Item = Coord> {
         .coords()
 }
 
+/// The board consists of the frame enclosing the grid and the status
+/// bar on the row beneath it.
+#[derive(Clone, Copy)]
+struct Board {
+    frame: Rect,
+    status_bar_start: Coord,
+}
+
+impl Board {
+    fn new((width, height): GridDimensions) -> Board {
+        assert!(width > 0 && height > 0, "Board::new() called with a zero-tile board");
+
+        let grid = Rect::from_corners(top_left((0, 0)), bottom_right((width - 1, height - 1)));
+
+        // The frame's border sits FRAME_MARGIN cells clear of the grid
+        // on every side.
+        let frame = Rect::from_corners(
+            Coord::new(grid.left() - FRAME_MARGIN_X - 1, grid.top() - FRAME_MARGIN_Y - 1),
+            Coord::new(grid.right() + FRAME_MARGIN_X + 1, grid.bottom() + FRAME_MARGIN_Y + 1),
+        );
+        let status_bar_start = Coord::new(frame.left(), frame.bottom() + 1);
+
+        Board { frame, status_bar_start }
+    }
+
+    /// The whole board, from the frame's top left to the end of the
+    /// status bar's row.
+    fn rect(self) -> Rect {
+        let bottom_right = Coord::new(self.frame.right(), self.status_bar_start.y);
+        Rect::from_corners(self.frame.top_left, bottom_right)
+    }
+}
+
 /// One screen coordinate: either an accumulated `Code` segment (resolved to
 /// a box-drawing character via `glyph()`), or a literal marker character
 /// for content that isn't expressible as arm weights at all, like the
@@ -544,58 +578,28 @@ struct Marks {
 }
 
 /// A dense grid of `Cell`, one per screen coordinate, initialized to a
-/// blank segment (`BLANK`). Sized from the tile grid and the menu
-/// passed to `new()`.
+/// blank segment (`BLANK`). Sized from the board and the menu passed to
+/// `new()`.
 pub(crate) struct Canvas {
     cells: Vec<Vec<Cell>>,
     /// How each position renders, independent of `cells`' own content.
     marks: Vec<Vec<Marks>>,
-    frame: Rect,
-    /// Where the status bar's text begins: the frame's left edge, on
-    /// the row just below it.
-    status_bar_start: Coord,
-}
-
-/// The frame enclosing the grid.
-pub(crate) fn grid_frame((width, height): GridDimensions) -> Rect {
-    assert!(width > 0 && height > 0, "grid_frame() called with a zero-tile board");
-
-    let grid = Rect::from_corners(top_left((0, 0)), bottom_right((width - 1, height - 1)));
-
-    // The frame's border sits FRAME_MARGIN cells clear of the grid
-    // on every side.
-    Rect::from_corners(
-        Coord::new(grid.left() - FRAME_MARGIN_X - 1, grid.top() - FRAME_MARGIN_Y - 1),
-        Coord::new(grid.right() + FRAME_MARGIN_X + 1, grid.bottom() + FRAME_MARGIN_Y + 1),
-    )
 }
 
 impl Canvas {
-    fn new(dimensions: GridDimensions, menu_size: Size) -> Canvas {
-        let frame = grid_frame(dimensions);
-
-        let status_bar_start = Coord::new(frame.left(), frame.bottom() + 1);
-
+    fn new(board_rect: Rect, menu_size: Size) -> Canvas {
         // The board and the menu sit end to end across the canvas, so
         // their widths add. They overlap down it, so the taller of the
         // two sets the height.
-        let canvas_size = Size::new(
-            frame.right() + 1 + menu_size.width + CANVAS_MARGIN_X,
-            max(status_bar_start.y + 1, frame.top() + menu_size.height) + CANVAS_MARGIN_Y,
+        let size = Size::new(
+            board_rect.right() + 1 + menu_size.width + CANVAS_MARGIN_X,
+            max(board_rect.bottom() + 1, board_rect.top() + menu_size.height) + CANVAS_MARGIN_Y,
         );
 
         Canvas {
-            cells: vec![vec![Cell::Segment(BLANK); canvas_size.width]; canvas_size.height],
-            marks: vec![vec![Marks::default(); canvas_size.width]; canvas_size.height],
-            frame,
-            status_bar_start,
+            cells: vec![vec![Cell::Segment(BLANK); size.width]; size.height],
+            marks: vec![vec![Marks::default(); size.width]; size.height],
         }
-    }
-
-    /// The board: the frame and the status bar row beneath it.
-    pub(crate) fn board(&self) -> Rect {
-        let bottom_right = Coord::new(self.frame.right(), self.status_bar_start.y);
-        Rect::from_corners(self.frame.top_left, bottom_right)
     }
 
     fn width(&self) -> usize {
@@ -1017,12 +1021,12 @@ const FRAME_WEIGHT: Weight = Weight::Double;
 /// Draws the outer presentation frame, offset from the grid lines by
 /// FRAME_MARGIN_X/FRAME_MARGIN_Y and from the canvas edge by
 /// CANVAS_MARGIN_X/CANVAS_MARGIN_Y.
-fn draw_frame(canvas: &mut Canvas) {
-    draw_rect_outline(canvas, canvas.frame, FRAME_WEIGHT);
+fn draw_frame(canvas: &mut Canvas, frame: Rect) {
+    draw_rect_outline(canvas, frame, FRAME_WEIGHT);
 }
 
-fn draw_status_bar(canvas: &mut Canvas, status: &str) {
-    canvas.draw_text(canvas.status_bar_start, status);
+fn draw_status_bar(canvas: &mut Canvas, start: Coord, status: &str) {
+    canvas.draw_text(start, status);
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -1095,7 +1099,7 @@ mod tests {
 
     /// A canvas sized for the board and its menu.
     fn canvas(dimensions: GridDimensions) -> Canvas {
-        Canvas::new(dimensions, Menu::new().size())
+        Canvas::new(Board::new(dimensions).rect(), Menu::new().size())
     }
 
     #[test]
@@ -1194,9 +1198,9 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "grid_frame() called with a zero-tile board")]
-    fn grid_frame_panics_on_zero_tile_board() {
-        grid_frame((0, 0));
+    #[should_panic(expected = "Board::new() called with a zero-tile board")]
+    fn board_new_panics_on_zero_tile_board() {
+        Board::new((0, 0));
     }
 
     #[test]
@@ -1283,14 +1287,17 @@ mod tests {
         // Menu Controls' header, opened so a legend is drawn too.
         menu.click((3, 5));
 
-        let mut canvas = Canvas::new((5, 5), menu.size());
-        let board = canvas.board();
-        menu.place_beside_board(Coord::new(board.right() + 1, board.top()), board.size.height);
+        let board_rect = Board::new((5, 5)).rect();
+        let mut canvas = Canvas::new(board_rect, menu.size());
+        menu.place_beside_board(board_rect);
         menu.draw(&mut canvas, nothing_dimmed(), Styles::default());
 
-        // The divider, the first button's corner, Cursor Style's header
-        // line and the legend's first label.
+        // The divider, ending on the board's last row, then the first
+        // button's corner, Cursor Style's header line and the legend's
+        // first label.
         assert_eq!(canvas.char_at((26, 5)), '│');
+        assert_eq!(canvas.char_at((26, 13)), '╵');
+        assert_eq!(canvas.char_at((26, 14)), ' ');
         assert_eq!(canvas.char_at((28, 0)), '┌');
         assert_eq!(canvas.char_at((29, 3)), '─');
         assert_eq!(canvas.char_at((28, 6)), 'G');
