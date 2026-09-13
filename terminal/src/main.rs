@@ -53,14 +53,15 @@ fn main() {
     let _guard = TerminalGuard;
 
     let mut session = net::Session::new();
+    let mut menu = menu::Menu::new();
+
     let mut styles = render::Styles::default();
-    let mut menu = menu::Menu::new(render::grid_frame(session.puzzle().dimensions).top_right());
 
     let mut game_running = true;
     while game_running {
         let availability =
             menu::ActionAvailability { can_undo: session.can_undo(), can_redo: session.can_redo() };
-        let output = render::render_game(session.puzzle(), styles, &menu, availability);
+        let output = render::render_game(session.puzzle(), styles, &mut menu, availability);
 
         // Anything past the last row would scroll the top away.
         let (_, rows) = terminal::size().expect("failed to query terminal size");

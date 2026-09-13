@@ -9,9 +9,12 @@ use crate::render::{
 /// The menu's tabs, listed top to bottom.
 pub(crate) struct Menu {
     tabs: Vec<Tab>,
-    /// Where the tabs start after the divider.
-    content_top_left: Coord,
     size: Size,
+    /// Where the menu sits on screen. Its headers, buttons and legends
+    /// are laid out from (0, 0) and shifted by this position to be drawn
+    /// or clicked.
+    top_left: Coord,
+    divider_length: usize,
     /// What the menu's focus is on. When it's `None`, the board has it.
     focus: Option<Focus>,
 }
@@ -26,41 +29,53 @@ enum Focus {
 }
 
 impl Menu {
-    /// Builds the menu beside the board, every named tab closed.
-    pub(crate) fn new(board_top_right: Coord) -> Menu {
+    /// Builds the menu with every named tab closed, at the top left of
+    /// the screen until `place_beside_board` moves it.
+    pub(crate) fn new() -> Menu {
         let tabs = TABS
             .iter()
             .map(|spec| Tab { spec, open: false, cursor: 0, header: None, body: None })
             .collect();
-        let content_top_left = Coord::new(board_top_right.x + 1 + MENU_MARGIN, board_top_right.y);
-        let mut menu = Menu { tabs, content_top_left, size: Size::new(0, 0), focus: None };
+        let mut menu = Menu {
+            tabs,
+            size: Size::new(0, 0),
+            top_left: Coord::new(0, 0),
+            divider_length: 0,
+            focus: None,
+        };
 
         menu.refresh_tabs();
         menu
     }
 
+    /// Moves the menu so it starts at `top_left`, just right of the
+    /// board, with its divider running the board's full height.
+    pub(crate) fn place_beside_board(&mut self, top_left: Coord, board_height: usize) {
+        self.top_left = top_left;
+        self.divider_length = board_height;
+    }
+
     /// Refreshes each tab's header and any body it's showing, top to
-    /// bottom, and calculates the menu's size from that.
+    /// bottom to the right of the divider, and calculates the menu's
+    /// size from that.
     fn refresh_tabs(&mut self) {
         let width = TABS.iter().map(TabSpec::width).max().unwrap_or(0);
-        let left = self.content_top_left.x;
-        let top = self.content_top_left.y;
-        let mut row = top;
+        let mut row = 0;
 
         for tab in &mut self.tabs {
             tab.header = tab.spec.name.map(|name| {
-                let rect = Rect::row(Coord::new(left, row), width);
+                let rect = Rect::row(Coord::new(MENU_MARGIN, row), width);
                 row += 1;
                 Header { rect, name }
             });
             tab.body = (tab.spec.name.is_none() || tab.open).then(|| {
-                let body = tab.spec.body.place(Coord::new(left, row));
+                let body = tab.spec.body.place(Coord::new(MENU_MARGIN, row));
                 row += body.height();
                 body
             });
         }
 
-        self.size = Size::new(MENU_MARGIN + width, row - top);
+        self.size = Size::new(MENU_MARGIN + width, row);
     }
 
     /// Draws the divider, then each tab's header and any body it's
@@ -71,32 +86,39 @@ impl Menu {
         availability: ActionAvailability,
         styles: Styles,
     ) {
-        draw_divider(canvas);
+        let offset = self.top_left;
+
+        draw_divider(canvas, offset, self.divider_length);
 
         for (index, tab) in self.tabs.iter().enumerate() {
             if let Some(header) = &tab.header {
                 let focused = self.focus == Some(Focus::Header(index));
-                draw_header(canvas, header, tab.open, focused);
+                draw_header(canvas, header, offset, tab.open, focused);
             }
             match &tab.body {
                 Some(Body::Buttons(buttons)) => {
                     let focused = self.focus == Some(Focus::Buttons(index));
                     for (position, button) in buttons.iter().enumerate() {
                         let has_cursor = focused && position == tab.cursor;
-                        draw_button(canvas, button, availability, has_cursor, styles);
+                        draw_button(canvas, button, offset, availability, has_cursor, styles);
                     }
                 }
-                Some(Body::Legend(legend)) => draw_legend(canvas, legend),
+                Some(Body::Legend(legend)) => draw_legend(canvas, legend, offset),
                 None => {}
             }
         }
     }
 
-    /// Takes a click. A header opens or closes its tab and returns no
-    /// action. A button returns its own, dimmed or not, since the
-    /// mid-end ignores an action it can't take.
+    /// Takes a click at a screen position. A header opens or closes its
+    /// tab and returns no action. A button returns its own, dimmed or
+    /// not, since the mid-end ignores an action it can't take.
     pub(crate) fn click(&mut self, position: impl Into<Coord>) -> Option<Action> {
         let position = position.into();
+        // A click left of or above the menu can't land on it.
+        let position = Coord::new(
+            position.x.checked_sub(self.top_left.x)?,
+            position.y.checked_sub(self.top_left.y)?,
+        );
         let header_hit = self.tabs.iter().position(|tab| {
             tab.header
                 .as_ref()
@@ -296,8 +318,8 @@ impl Body {
     }
 }
 
-/// A legend's rows and where they start. Nothing in it is clickable,
-/// so a corner to draw from is all it needs.
+/// A legend's rows and where they start in the menu. Nothing in it is
+/// clickable, so a corner to draw from is all it needs.
 struct Legend {
     groups: &'static [LegendGroup],
     top_left: Coord,
@@ -345,7 +367,7 @@ struct ButtonSpec {
     label: &'static str,
 }
 
-/// One button of the menu, with the rectangle it occupies.
+/// One button of the menu, with the rectangle it occupies within it.
 #[derive(Clone, Copy, Debug)]
 struct Button {
     spec: &'static ButtonSpec,
@@ -459,7 +481,7 @@ fn legend_height(groups: &[LegendGroup]) -> usize {
 /// the frame's own border.
 const DIVIDER_MARGIN: usize = 1;
 
-/// Columns between the board and the menu: the divider itself,
+/// Columns the menu starts with before its tabs: the divider itself,
 /// with its margin either side.
 const MENU_MARGIN: usize = 2 * DIVIDER_MARGIN + 1;
 
@@ -491,20 +513,20 @@ fn place_buttons(specs: &'static [ButtonSpec], top_left: Coord, choice: bool) ->
         .collect()
 }
 
-/// Draws a light vertical line between the board and the menu,
-/// spanning the board's full height.
-fn draw_divider(canvas: &mut Canvas) {
-    let board = canvas.board();
-    let column = board.right() + 1 + DIVIDER_MARGIN;
+/// Draws a light vertical line down the menu's first columns, `length`
+/// rows long.
+fn draw_divider(canvas: &mut Canvas, offset: Coord, length: usize) {
+    let column = offset.x + DIVIDER_MARGIN;
+    let bottom = offset.y + length - 1;
 
-    draw_line(canvas, (column, board.top()), (column, board.bottom()), Weight::Light);
+    draw_line(canvas, (column, offset.y), (column, bottom), Weight::Light);
 }
 
 /// Draws a header: a line across the menu, the tab's name written
 /// over it, and an arrow at the right end showing which way a click
 /// will take it. The line is heavy while the tab has focus.
-fn draw_header(canvas: &mut Canvas, header: &Header, open: bool, focused: bool) {
-    let rect = header.rect;
+fn draw_header(canvas: &mut Canvas, header: &Header, offset: Coord, open: bool, focused: bool) {
+    let rect = header.rect.shifted_by(offset);
     let row = rect.top();
     let weight = if focused {
         Weight::Heavy
@@ -522,10 +544,11 @@ fn draw_header(canvas: &mut Canvas, header: &Header, open: bool, focused: bool) 
 
 /// Draws a legend's groups from its top left, each label above its own
 /// entries and a blank row between groups.
-fn draw_legend(canvas: &mut Canvas, legend: &Legend) {
+fn draw_legend(canvas: &mut Canvas, legend: &Legend, offset: Coord) {
     let input_width = widest_legend_input(legend.groups);
-    let start_column = legend.top_left.x;
-    let mut row = legend.top_left.y;
+    let top_left = legend.top_left.shifted_by(offset);
+    let start_column = top_left.x;
+    let mut row = top_left.y;
 
     for (index, group) in legend.groups.iter().enumerate() {
         // Add a blank row above every group but the first.
@@ -557,11 +580,12 @@ fn draw_legend(canvas: &mut Canvas, legend: &Legend) {
 fn draw_button(
     canvas: &mut Canvas,
     button: &Button,
+    offset: Coord,
     availability: ActionAvailability,
     has_cursor: bool,
     styles: Styles,
 ) {
-    let rect = button.rect;
+    let rect = button.rect.shifted_by(offset);
     let weight = if has_cursor {
         Weight::Heavy
     } else {
@@ -609,17 +633,12 @@ fn available(action: Action, availability: ActionAvailability) -> bool {
 mod tests {
     use super::*;
 
-    /// A menu beside a 5x5 board, every tab closed.
-    fn menu() -> Menu {
-        Menu::new(crate::render::grid_frame((5, 5)).top_right())
-    }
-
     /// The widest tab sets the width, open or not, so opening one
     /// never shifts the menu sideways. The legend's longest row is
     /// 57 columns against the button row's 56.
     #[test]
     fn menu_width_is_its_widest_tab_and_the_margin() {
-        assert_eq!(menu().size().width, 60);
+        assert_eq!(Menu::new().size().width, 60);
     }
 
     /// A closed tab shows its header and nothing else.
@@ -627,21 +646,21 @@ mod tests {
     fn a_closed_tab_costs_only_its_header() {
         // The button row's three, and a header each for the four
         // named tabs.
-        assert_eq!(menu().size().height, 7);
+        assert_eq!(Menu::new().size().height, 7);
     }
 
     /// Clicking a header returns no action and opens the tab, making room
     /// for its body.
     #[test]
     fn clicking_a_header_opens_the_tab() {
-        let mut menu = menu();
+        let mut menu = Menu::new();
         // Cursor Style's header, on the row below the button row.
-        assert!(menu.click((28, 3)).is_none());
+        assert!(menu.click((3, 3)).is_none());
 
         // Its buttons take one row of three, like any button body.
         assert_eq!(menu.size().height, 7 + BUTTON_HEIGHT);
 
-        assert!(menu.click((28, 3)).is_none());
+        assert!(menu.click((3, 3)).is_none());
         assert_eq!(menu.size().height, 7);
     }
 
@@ -668,23 +687,34 @@ mod tests {
         assert_eq!(unavailable_labels(undo_only), ["Redo"]);
     }
 
-    /// Where the buttons are placed is where clicks find them. On a
-    /// 5x5 board the frame ends at column 24, so the row starts at 28
-    /// and the six buttons run to column 83.
+    /// Where the buttons are placed is where clicks find them. The row
+    /// starts after the divider's three columns, and the six buttons
+    /// run to column 58.
     #[test]
     fn a_click_lands_on_the_button_it_is_over() {
-        let mut menu = menu();
+        let mut menu = Menu::new();
         let mut find = |x, y| menu.click((x, y));
 
-        assert!(matches!(find(28, 0), Some(Action::NewGame)));
-        assert!(matches!(find(39, 0), Some(Action::NewGame)));
-        assert!(matches!(find(40, 0), Some(Action::Restart)));
-        assert!(matches!(find(83, 2), Some(Action::Quit)));
+        assert!(matches!(find(3, 0), Some(Action::NewGame)));
+        assert!(matches!(find(14, 0), Some(Action::NewGame)));
+        assert!(matches!(find(15, 0), Some(Action::Restart)));
+        assert!(matches!(find(58, 2), Some(Action::Quit)));
 
-        // Left of the row, past its end, and below its last row.
-        assert!(find(27, 0).is_none());
-        assert!(find(84, 0).is_none());
-        assert!(find(28, 4).is_none());
+        // Left of the row, past its end, and below every tab.
+        assert!(find(2, 0).is_none());
+        assert!(find(59, 0).is_none());
+        assert!(find(3, 7).is_none());
+    }
+
+    /// Clicks arrive in screen coordinates, so a moved menu takes them
+    /// where it now sits and ignores the spot it left.
+    #[test]
+    fn clicks_find_a_moved_menu_where_it_sits() {
+        let mut menu = Menu::new();
+        menu.place_beside_board(Coord::new(25, 0), 14);
+
+        assert!(matches!(menu.click((28, 0)), Some(Action::NewGame)));
+        assert!(menu.click((3, 0)).is_none());
     }
 
     /// The 'Tab' key visits each header and each row of buttons on
@@ -692,7 +722,7 @@ mod tests {
     /// the board.
     #[test]
     fn focus_visits_every_header_and_row_of_buttons() {
-        let mut menu = menu();
+        let mut menu = Menu::new();
         let mut visited = Vec::new();
         for _ in 0..6 {
             menu.focus_next();
@@ -716,15 +746,15 @@ mod tests {
     /// nowhere new to stop, where opening a row of buttons does.
     #[test]
     fn only_buttons_give_the_focus_somewhere_to_stop() {
-        let mut menu = menu();
+        let mut menu = Menu::new();
         let closed = menu.focus_order().count();
 
         // Menu Controls, the third header down.
-        menu.click((28, 5));
+        menu.click((3, 5));
         assert_eq!(menu.focus_order().count(), closed);
 
         // Cursor Style, the first.
-        menu.click((28, 3));
+        menu.click((3, 3));
         assert_eq!(menu.focus_order().count(), closed + 1);
     }
 
@@ -732,7 +762,7 @@ mod tests {
     /// last place.
     #[test]
     fn focus_previous_reverses_focus_next() {
-        let mut menu = menu();
+        let mut menu = Menu::new();
         menu.focus_next();
         menu.focus_next();
         let two_in = menu.focus;
@@ -750,7 +780,7 @@ mod tests {
     /// action, where a press on buttons gives the one under the cursor.
     #[test]
     fn pressing_a_header_opens_it_and_pressing_buttons_acts() {
-        let mut menu = menu();
+        let mut menu = Menu::new();
         let closed_height = menu.size().height;
 
         // Cursor Style's header, the second place the focus visits.

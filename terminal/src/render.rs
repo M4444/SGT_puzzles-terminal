@@ -15,13 +15,13 @@ use std::cmp::max;
 pub(crate) fn render_game(
     puzzle: &NetPuzzle,
     styles: Styles,
-    menu: &Menu,
+    menu: &mut Menu,
     availability: ActionAvailability,
 ) -> String {
     let puzzle = puzzle_relative_to_origin(puzzle);
     let dimensions = puzzle.dimensions;
 
-    let mut canvas = Canvas::new(dimensions, menu);
+    let mut canvas = Canvas::new(dimensions, menu.size());
 
     draw_grid_lines(&mut canvas, dimensions);
     draw_wires_and_endpoints(&mut canvas, &puzzle.tiles);
@@ -35,6 +35,8 @@ pub(crate) fn render_game(
     }
     draw_status_bar(&mut canvas, &puzzle.status);
 
+    let board = canvas.board();
+    menu.place_beside_board(Coord::new(board.right() + 1, board.top()), board.size.height);
     menu.draw(&mut canvas, availability, styles);
 
     flatten_to_lines(&canvas).join("\n")
@@ -251,6 +253,10 @@ impl Coord {
     pub(crate) fn new(x: usize, y: usize) -> Coord {
         Coord { x, y }
     }
+
+    pub(crate) fn shifted_by(self, offset: Coord) -> Coord {
+        Coord::new(self.x + offset.x, self.y + offset.y)
+    }
 }
 
 impl From<(usize, usize)> for Coord {
@@ -304,10 +310,6 @@ impl Rect {
         self.top_left.y
     }
 
-    pub(crate) fn top_right(self) -> Coord {
-        Coord::new(self.right(), self.top())
-    }
-
     pub(crate) fn right(self) -> usize {
         assert!(self.size.width > 0, "Rect::right() called on an empty rectangle");
         self.top_left.x + self.size.width - 1
@@ -316,6 +318,10 @@ impl Rect {
     pub(crate) fn bottom(self) -> usize {
         assert!(self.size.height > 0, "Rect::bottom() called on an empty rectangle");
         self.top_left.y + self.size.height - 1
+    }
+
+    pub(crate) fn shifted_by(self, offset: Coord) -> Rect {
+        Rect::new(self.top_left.shifted_by(offset), self.size)
     }
 
     /// The cells the rectangle encloses, excluding its own border.
@@ -565,19 +571,17 @@ pub(crate) fn grid_frame((width, height): GridDimensions) -> Rect {
 }
 
 impl Canvas {
-    fn new(dimensions: GridDimensions, menu: &Menu) -> Canvas {
+    fn new(dimensions: GridDimensions, menu_size: Size) -> Canvas {
         let frame = grid_frame(dimensions);
 
         let status_bar_start = Coord::new(frame.left(), frame.bottom() + 1);
-
-        let menu = menu.size();
 
         // The board and the menu sit end to end across the canvas, so
         // their widths add. They overlap down it, so the taller of the
         // two sets the height.
         let canvas_size = Size::new(
-            frame.right() + 1 + menu.width + CANVAS_MARGIN_X,
-            max(status_bar_start.y + 1, frame.top() + menu.height) + CANVAS_MARGIN_Y,
+            frame.right() + 1 + menu_size.width + CANVAS_MARGIN_X,
+            max(status_bar_start.y + 1, frame.top() + menu_size.height) + CANVAS_MARGIN_Y,
         );
 
         Canvas {
@@ -1084,11 +1088,6 @@ mod tests {
     use crate::menu::ActionAvailability;
     use crate::net::TileCoordNeighbors;
 
-    /// A menu beside a board of the given size, every tab closed.
-    fn menu(dimensions: GridDimensions) -> Menu {
-        Menu::new(grid_frame(dimensions).top_right())
-    }
-
     /// Every action available, so nothing is dimmed.
     fn nothing_dimmed() -> ActionAvailability {
         ActionAvailability { can_undo: true, can_redo: true }
@@ -1096,7 +1095,7 @@ mod tests {
 
     /// A canvas sized for the board and its menu.
     fn canvas(dimensions: GridDimensions) -> Canvas {
-        Canvas::new(dimensions, &menu(dimensions))
+        Canvas::new(dimensions, Menu::new().size())
     }
 
     #[test]
@@ -1213,8 +1212,7 @@ mod tests {
         for _ in 0..100 {
             let session = crate::net::Session::new();
             let puzzle = session.puzzle();
-            let menu = menu(puzzle.dimensions);
-            render_game(puzzle, Styles::default(), &menu, nothing_dimmed());
+            render_game(puzzle, Styles::default(), &mut Menu::new(), nothing_dimmed());
         }
     }
 
@@ -1276,6 +1274,28 @@ mod tests {
         assert!(lines[0].contains(&SetAttribute(Attribute::NormalIntensity).to_string()));
     }
 
+    /// A placed menu draws where it was placed. Beside a 5x5 board, whose
+    /// frame ends at column 24, the divider sits at 26 and the tabs
+    /// start at 28.
+    #[test]
+    fn menu_draws_where_it_is_placed() {
+        let mut menu = Menu::new();
+        // Menu Controls' header, opened so a legend is drawn too.
+        menu.click((3, 5));
+
+        let mut canvas = Canvas::new((5, 5), menu.size());
+        let board = canvas.board();
+        menu.place_beside_board(Coord::new(board.right() + 1, board.top()), board.size.height);
+        menu.draw(&mut canvas, nothing_dimmed(), Styles::default());
+
+        // The divider, the first button's corner, Cursor Style's header
+        // line and the legend's first label.
+        assert_eq!(canvas.char_at((26, 5)), '│');
+        assert_eq!(canvas.char_at((28, 0)), '┌');
+        assert_eq!(canvas.char_at((29, 3)), '─');
+        assert_eq!(canvas.char_at((28, 6)), 'G');
+    }
+
     /// An unavailable action's button is dimmed, so a rendered game
     /// carries the dim attribute only when one of them is unavailable.
     #[test]
@@ -1283,8 +1303,9 @@ mod tests {
         let session = crate::net::Session::new();
         let puzzle = session.puzzle();
         let dim = SetAttribute(Attribute::Dim).to_string();
-        let menu = menu(puzzle.dimensions);
-        let render = |availability| render_game(puzzle, Styles::default(), &menu, availability);
+        let mut menu = Menu::new();
+        let mut render =
+            |availability| render_game(puzzle, Styles::default(), &mut menu, availability);
 
         let fresh = ActionAvailability { can_undo: false, can_redo: false };
         let mid_game = ActionAvailability { can_undo: true, can_redo: true };
