@@ -11,12 +11,19 @@ pub type Grid<T> = Vec<Vec<T>>;
 pub type GridDimensions = (usize, usize);
 pub type TileCoord = (usize, usize);
 
-/// A tile coordinate's neighbours one step over in each direction.
+/// A tile coordinate's neighbours one step over in each direction. The
+/// checked versions give `None` where the step would leave `usize`'s
+/// range, so from the top row there's no tile above.
 pub trait TileCoordNeighbors {
     fn right(&self) -> TileCoord;
     fn top(&self) -> TileCoord;
     fn left(&self) -> TileCoord;
     fn bottom(&self) -> TileCoord;
+
+    fn checked_right(&self) -> Option<TileCoord>;
+    fn checked_top(&self) -> Option<TileCoord>;
+    fn checked_left(&self) -> Option<TileCoord>;
+    fn checked_bottom(&self) -> Option<TileCoord>;
 }
 
 impl TileCoordNeighbors for TileCoord {
@@ -35,6 +42,23 @@ impl TileCoordNeighbors for TileCoord {
     fn bottom(&self) -> TileCoord {
         let (x, y) = *self;
         (x, y + 1)
+    }
+
+    fn checked_right(&self) -> Option<TileCoord> {
+        let (x, y) = *self;
+        Some((x.checked_add(1)?, y))
+    }
+    fn checked_top(&self) -> Option<TileCoord> {
+        let (x, y) = *self;
+        Some((x, y.checked_sub(1)?))
+    }
+    fn checked_left(&self) -> Option<TileCoord> {
+        let (x, y) = *self;
+        Some((x.checked_sub(1)?, y))
+    }
+    fn checked_bottom(&self) -> Option<TileCoord> {
+        let (x, y) = *self;
+        Some((x, y.checked_add(1)?))
     }
 }
 
@@ -242,6 +266,44 @@ pub fn draw_grid_lines(canvas: &mut Canvas, (width, height): GridDimensions) {
     }
 }
 
+/// Draws the outline around the tiles that are on the board.
+pub fn draw_irregular_grid_outline<T>(
+    canvas: &mut Canvas,
+    grid: &Grid<T>,
+    is_on_board: impl Fn(&T) -> bool,
+) {
+    let is_on_board_at = |neighbour: Option<TileCoord>| {
+        neighbour.is_some_and(|(tile_x, tile_y)| {
+            grid.get(tile_y)
+                .and_then(|row| row.get(tile_x))
+                .is_some_and(&is_on_board)
+        })
+    };
+
+    for (tile_y, row) in grid.iter().enumerate() {
+        for (tile_x, tile) in row.iter().enumerate() {
+            if !is_on_board(tile) {
+                continue;
+            }
+
+            let tile_coord = (tile_x, tile_y);
+
+            if !is_on_board_at(tile_coord.checked_right()) {
+                draw_line(canvas, top_right(tile_coord), bottom_right(tile_coord), Weight::Light);
+            }
+            if !is_on_board_at(tile_coord.checked_top()) {
+                draw_line(canvas, top_left(tile_coord), top_right(tile_coord), Weight::Light);
+            }
+            if !is_on_board_at(tile_coord.checked_left()) {
+                draw_line(canvas, top_left(tile_coord), bottom_left(tile_coord), Weight::Light);
+            }
+            if !is_on_board_at(tile_coord.checked_bottom()) {
+                draw_line(canvas, bottom_left(tile_coord), bottom_right(tile_coord), Weight::Light);
+            }
+        }
+    }
+}
+
 const FRAME_WEIGHT: Weight = Weight::Double;
 
 /// Draws the outer presentation frame, offset from the grid lines by
@@ -286,5 +348,19 @@ mod tests {
     #[should_panic(expected = "Board::new() called with a zero-tile board")]
     fn board_new_panics_on_zero_tile_board() {
         Board::new((0, 0));
+    }
+
+    /// An L of three tiles on the board in a 2x2 grid. The border the two
+    /// top tiles share stays blank and the outline turns a corner where
+    /// it steps in around the bottom right tile, which is off the board.
+    #[test]
+    fn draw_irregular_grid_outline_skips_borders_between_tiles() {
+        let grid = vec![vec![true, true], vec![true, false]];
+        let mut canvas = Canvas::new(Board::new((2, 2)).rect(), Size::new(0, 0));
+
+        draw_irregular_grid_outline(&mut canvas, &grid, |&is_on_board| is_on_board);
+
+        assert_eq!(canvas.char_at(right_side((0, 0))), ' ');
+        assert_eq!(canvas.char_at(top_right((0, 1))), '┌');
     }
 }

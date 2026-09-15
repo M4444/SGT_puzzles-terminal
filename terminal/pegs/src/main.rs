@@ -1,35 +1,59 @@
 //! Draws a hardcoded Pegs board for the terminal.
 
-use common::canvas::{Canvas, Coord, Rect, Size, Weight, draw_line, flatten_to_lines};
+use common::board::{Board, Grid, center_mid, draw_frame, draw_irregular_grid_outline};
+use common::canvas::{Canvas, Size, flatten_to_lines};
+
+type Tiles = Grid<Tile>;
+
+/// What a tile on the grid holds.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Tile {
+    Hole,
+    Peg,
+    Obstacle,
+}
+
+const PEG: char = '⬤';
+const HOLE: char = '◯';
 
 fn main() {
-    // The 7x7 cross, with squares 4 columns and 2 rows apart.
-    let board_rect = Rect::new(Coord::new(0, 0), Size::new(29, 15));
-    let mut canvas = Canvas::new(board_rect, Size::new(0, 0));
+    let tiles = build_board();
 
-    // The outline, clockwise from the top left of the top arm.
-    draw_line(&mut canvas, (8, 0), (20, 0), Weight::Light);
-    draw_line(&mut canvas, (20, 0), (20, 4), Weight::Light);
-    draw_line(&mut canvas, (20, 4), (28, 4), Weight::Light);
-    draw_line(&mut canvas, (28, 4), (28, 10), Weight::Light);
-    draw_line(&mut canvas, (28, 10), (20, 10), Weight::Light);
-    draw_line(&mut canvas, (20, 10), (20, 14), Weight::Light);
-    draw_line(&mut canvas, (20, 14), (8, 14), Weight::Light);
-    draw_line(&mut canvas, (8, 14), (8, 10), Weight::Light);
-    draw_line(&mut canvas, (8, 10), (0, 10), Weight::Light);
-    draw_line(&mut canvas, (0, 10), (0, 4), Weight::Light);
-    draw_line(&mut canvas, (0, 4), (8, 4), Weight::Light);
-    draw_line(&mut canvas, (8, 4), (8, 0), Weight::Light);
+    let board = Board::new((tiles[0].len(), tiles.len()));
+    let mut canvas = Canvas::new(board.rect(), Size::new(0, 0));
 
-    canvas.draw_text((10, 1), "⬤   ⬤   ⬤");
-    canvas.draw_text((10, 3), "⬤   ⬤   ⬤");
-    canvas.draw_text((2, 5), "⬤   ⬤   ⬤   ⬤   ⬤   ⬤   ⬤");
-    canvas.draw_text((2, 7), "⬤   ⬤   ⬤   ◯   ⬤   ⬤   ⬤");
-    canvas.draw_text((2, 9), "⬤   ⬤   ⬤   ⬤   ⬤   ⬤   ⬤");
-    canvas.draw_text((10, 11), "⬤   ⬤   ⬤");
-    canvas.draw_text((10, 13), "⬤   ⬤   ⬤");
+    draw_irregular_grid_outline(&mut canvas, &tiles, |&tile| tile != Tile::Obstacle);
+    draw_pegs_and_holes(&mut canvas, &tiles);
+    draw_frame(&mut canvas, board.frame);
 
     for line in flatten_to_lines(&canvas, usize::MAX) {
         println!("{line}");
+    }
+}
+
+/// The 7x7 cross, with a peg on every tile on the board except the center.
+fn build_board() -> Tiles {
+    use Tile::{Hole, Obstacle, Peg};
+
+    vec![
+        vec![Obstacle, Obstacle, Peg, Peg, Peg, Obstacle, Obstacle],
+        vec![Obstacle, Obstacle, Peg, Peg, Peg, Obstacle, Obstacle],
+        vec![Peg, Peg, Peg, Peg, Peg, Peg, Peg],
+        vec![Peg, Peg, Peg, Hole, Peg, Peg, Peg],
+        vec![Peg, Peg, Peg, Peg, Peg, Peg, Peg],
+        vec![Obstacle, Obstacle, Peg, Peg, Peg, Obstacle, Obstacle],
+        vec![Obstacle, Obstacle, Peg, Peg, Peg, Obstacle, Obstacle],
+    ]
+}
+
+fn draw_pegs_and_holes(canvas: &mut Canvas, tiles: &Tiles) {
+    for (tile_y, row) in tiles.iter().enumerate() {
+        for (tile_x, &tile) in row.iter().enumerate() {
+            match tile {
+                Tile::Hole => canvas.draw_char(center_mid((tile_x, tile_y)), HOLE),
+                Tile::Peg => canvas.draw_char(center_mid((tile_x, tile_y)), PEG),
+                Tile::Obstacle => {}
+            }
+        }
     }
 }
