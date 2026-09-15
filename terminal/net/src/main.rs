@@ -29,7 +29,7 @@ fn main() {
     let _guard = TerminalGuard;
     let (mut columns, mut rows) = terminal::size().expect("failed to query terminal size");
 
-    let mut session = net::Session::new();
+    let mut session = net::new_session();
     let mut menu = menu::Menu::new(&session.presets());
 
     let mut styles = render::Styles::default();

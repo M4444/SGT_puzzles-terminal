@@ -3,3 +3,4 @@
 pub mod board;
 pub mod canvas;
 pub mod ffi;
+pub mod session;

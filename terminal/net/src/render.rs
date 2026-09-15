@@ -363,7 +363,7 @@ mod tests {
     #[test]
     fn render_game_does_not_panic_across_many_generated_boards() {
         for _ in 0..100 {
-            let session = crate::net::Session::new();
+            let session = crate::net::new_session();
             let puzzle = session.puzzle();
             render_game(puzzle, MenuState::default(), &mut Menu::new(&[]), usize::MAX);
         }
@@ -453,7 +453,7 @@ mod tests {
     /// carries the dim attribute only when one of them is unavailable.
     #[test]
     fn render_game_dims_unavailable_menu_buttons() {
-        let session = crate::net::Session::new();
+        let session = crate::net::new_session();
         let puzzle = session.puzzle();
         let dim = SetAttribute(Attribute::Dim).to_string();
         let mut menu = Menu::new(&[]);
