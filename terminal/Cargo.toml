@@ -1,15 +1,3 @@
-[package]
-name = "terminal"
-version = "0.1.0"
-edition = "2024"
-
-[[bin]]
-name = "net"
-path = "src/main.rs"
-
-[build-dependencies]
-cc = "1"
-
-[dependencies]
-crossterm = "0.29.0"
-rand = "0.10.2"
+[workspace]
+members = ["net"]
+resolver = "3"
