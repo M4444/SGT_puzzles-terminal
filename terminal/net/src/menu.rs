@@ -2,10 +2,8 @@
 //! divider.
 
 use crate::ffi::Preset;
-use crate::render::{
-    Canvas, Coord, CursorStyle, LockStyle, Mark, Rect, Size, Styles, Weight, draw_line,
-    draw_rect_outline,
-};
+use crate::render::{CursorStyle, LockStyle, Styles};
+use common::{Canvas, Coord, Mark, Rect, Size, Weight, draw_line, draw_rect_outline};
 
 /// The menu's tabs, listed top to bottom.
 pub(crate) struct Menu {
