@@ -2,6 +2,7 @@
 
 use crate::ffi::{Midend, Preset, RawDrawing, RawDrawingApi, RawGame, RawGameState, window_offset};
 use crate::menu::{LegendEntry, LegendGroup};
+use common::board::{Grid, GridDimensions, TileCoord};
 use std::ffi::{CStr, c_char, c_int, c_void};
 
 unsafe extern "C" {
@@ -63,39 +64,6 @@ impl Barriers {
     }
 }
 
-pub(crate) type GridDimensions = (usize, usize);
-pub(crate) type TileCoord = (usize, usize);
-pub(crate) type Tiles = Vec<Vec<Tile>>;
-
-/// A tile coordinate's neighbours one step over in each direction.
-pub(crate) trait TileCoordNeighbors {
-    #[allow(dead_code)]
-    fn right(&self) -> TileCoord;
-    fn top(&self) -> TileCoord;
-    fn left(&self) -> TileCoord;
-    #[allow(dead_code)]
-    fn bottom(&self) -> TileCoord;
-}
-
-impl TileCoordNeighbors for TileCoord {
-    fn right(&self) -> TileCoord {
-        let (x, y) = *self;
-        (x + 1, y)
-    }
-    fn top(&self) -> TileCoord {
-        let (x, y) = *self;
-        (x, y - 1)
-    }
-    fn left(&self) -> TileCoord {
-        let (x, y) = *self;
-        (x - 1, y)
-    }
-    fn bottom(&self) -> TileCoord {
-        let (x, y) = *self;
-        (x, y + 1)
-    }
-}
-
 /// A single tile's wires and barriers, and whether it's currently
 /// powered or locked.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
@@ -106,6 +74,8 @@ pub(crate) struct Tile {
     pub locked: bool,
 }
 
+pub(crate) type Tiles = Grid<Tile>;
+
 /// The keyboard cursor's position and whether it's currently shown.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct Cursor {
@@ -113,7 +83,7 @@ pub(crate) struct Cursor {
     pub visible: bool,
 }
 
-/// A Net puzzle, indexed `[row][column]`.
+/// A Net puzzle.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct NetPuzzle {
     pub dimensions: GridDimensions,

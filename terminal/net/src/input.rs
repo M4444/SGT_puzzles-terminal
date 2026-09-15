@@ -2,8 +2,9 @@
 //! mid-end's key codes.
 
 use crate::menu;
-use crate::net::{Session, TileCoord};
+use crate::net::Session;
 use crate::render;
+use common::board::{TileCoord, tiles_at};
 use crossterm::event::{
     Event, KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind,
 };
@@ -129,7 +130,7 @@ fn take_click(
         return take_action(action, session, styles);
     }
 
-    let possible_tiles = render::tiles_at(position, session.puzzle().dimensions);
+    let possible_tiles = tiles_at(position, session.puzzle().dimensions);
     match resolve_tile(&possible_tiles, button, session) {
         Some(tile) => session.process_click(tile, button),
         None => true,

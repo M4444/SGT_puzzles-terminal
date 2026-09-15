@@ -1,6 +1,6 @@
 //! Draws a hardcoded Pegs board for the terminal.
 
-use common::{Canvas, Coord, Rect, Size, Weight, draw_line, flatten_to_lines};
+use common::canvas::{Canvas, Coord, Rect, Size, Weight, draw_line, flatten_to_lines};
 
 fn main() {
     // The 7x7 cross, with squares 4 columns and 2 rows apart.
