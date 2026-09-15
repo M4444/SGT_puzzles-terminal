@@ -51,6 +51,7 @@ fn main() {
     enable_raw_mode().expect("failed to enable raw mode");
     execute!(stdout(), EnableMouseCapture, Hide).ok();
     let _guard = TerminalGuard;
+    let (mut columns, mut rows) = terminal::size().expect("failed to query terminal size");
 
     let mut session = net::Session::new();
     let mut menu = menu::Menu::new();
@@ -61,10 +62,10 @@ fn main() {
     while game_running {
         let availability =
             menu::ActionAvailability { can_undo: session.can_undo(), can_redo: session.can_redo() };
-        let output = render::render_game(session.puzzle(), styles, &mut menu, availability);
+        let output =
+            render::render_game(session.puzzle(), styles, &mut menu, availability, columns.into());
 
         // Anything past the last row would scroll the top away.
-        let (_, rows) = terminal::size().expect("failed to query terminal size");
         let output: Vec<&str> = output.lines().take(rows.into()).collect();
 
         execute!(stdout(), Clear(ClearType::All), MoveTo(0, 0)).ok();
@@ -75,6 +76,11 @@ fn main() {
         game_running = match event {
             Event::Key(key) => take_key(key, &mut menu, &mut session, &mut styles),
             Event::Mouse(mouse) => take_click(mouse, &mut menu, &mut session, &mut styles),
+            Event::Resize(new_columns, new_rows) => {
+                columns = new_columns;
+                rows = new_rows;
+                true
+            }
             _ => true,
         };
     }

@@ -17,6 +17,7 @@ pub(crate) fn render_game(
     styles: Styles,
     menu: &mut Menu,
     availability: ActionAvailability,
+    terminal_columns: usize,
 ) -> String {
     let puzzle = puzzle_relative_to_origin(puzzle);
     let dimensions = puzzle.dimensions;
@@ -37,10 +38,10 @@ pub(crate) fn render_game(
     }
     draw_status_bar(&mut canvas, board.status_bar_start, &puzzle.status);
 
-    menu.place_beside_board(board_rect);
+    menu.set_placement(board_rect, terminal_columns);
     menu.draw(&mut canvas, availability, styles);
 
-    flatten_to_lines(&canvas).join("\n")
+    flatten_to_lines(&canvas, terminal_columns).join("\n")
 }
 
 /// Transforms a puzzle's tiles, source, and cursor from game coordinates
@@ -1047,14 +1048,16 @@ impl Intensity {
 }
 
 /// Flattens the drawn canvas into one line of text per screen row.
-fn flatten_to_lines(canvas: &Canvas) -> Vec<String> {
+/// Lines are cut at the terminal's width here, where the escape codes
+/// are written, so a cut line still ends with its resets.
+fn flatten_to_lines(canvas: &Canvas, terminal_columns: usize) -> Vec<String> {
     let mut lines: Vec<String> = Vec::with_capacity(canvas.height());
     for y in 0..canvas.height() {
         let mut line = String::with_capacity(canvas.width());
         let mut reversed = false;
         let mut active_intensity = Intensity::Normal;
 
-        for x in 0..canvas.width() {
+        for x in 0..canvas.width().min(terminal_columns) {
             if canvas.is_reversed((x, y)) != reversed {
                 reversed = !reversed;
                 let attribute = if reversed {
@@ -1216,7 +1219,7 @@ mod tests {
         for _ in 0..100 {
             let session = crate::net::Session::new();
             let puzzle = session.puzzle();
-            render_game(puzzle, Styles::default(), &mut Menu::new(), nothing_dimmed());
+            render_game(puzzle, Styles::default(), &mut Menu::new(), nothing_dimmed(), usize::MAX);
         }
     }
 
@@ -1263,7 +1266,7 @@ mod tests {
         let mut canvas = canvas((1, 1));
         canvas.mark((0, 0), Mark::Reversed);
 
-        let lines = flatten_to_lines(&canvas);
+        let lines = flatten_to_lines(&canvas, usize::MAX);
         assert!(lines[0].starts_with(&SetAttribute(Attribute::Reverse).to_string()));
         assert!(lines[0].contains(&SetAttribute(Attribute::NoReverse).to_string()));
     }
@@ -1273,7 +1276,7 @@ mod tests {
         let mut canvas = canvas((1, 1));
         canvas.mark_region([Coord::new(0, 0)], Mark::Dimmed);
 
-        let lines = flatten_to_lines(&canvas);
+        let lines = flatten_to_lines(&canvas, usize::MAX);
         assert!(lines[0].starts_with(&SetAttribute(Attribute::Dim).to_string()));
         assert!(lines[0].contains(&SetAttribute(Attribute::NormalIntensity).to_string()));
     }
@@ -1289,7 +1292,7 @@ mod tests {
 
         let board_rect = Board::new((5, 5)).rect();
         let mut canvas = Canvas::new(board_rect, menu.size());
-        menu.place_beside_board(board_rect);
+        menu.set_placement(board_rect, usize::MAX);
         menu.draw(&mut canvas, nothing_dimmed(), Styles::default());
 
         // The divider, ending on the board's last row, then the first
@@ -1303,6 +1306,23 @@ mod tests {
         assert_eq!(canvas.char_at((28, 6)), 'G');
     }
 
+    /// A header's line and arrow stop at the terminal's edge when the
+    /// menu runs past it.
+    #[test]
+    fn headers_stop_at_the_terminal_edge() {
+        let mut menu = Menu::new();
+        let board_rect = Board::new((5, 5)).rect();
+        let mut canvas = Canvas::new(board_rect, menu.size());
+
+        // Cursor Style's header would run to column 84 in a terminal
+        // wide enough, but this one is 60 columns wide.
+        menu.set_placement(board_rect, 60);
+        menu.draw(&mut canvas, nothing_dimmed(), Styles::default());
+
+        assert_eq!(canvas.char_at((59, 3)), '▼');
+        assert_eq!(canvas.char_at((60, 3)), ' ');
+    }
+
     /// An unavailable action's button is dimmed, so a rendered game
     /// carries the dim attribute only when one of them is unavailable.
     #[test]
@@ -1311,8 +1331,9 @@ mod tests {
         let puzzle = session.puzzle();
         let dim = SetAttribute(Attribute::Dim).to_string();
         let mut menu = Menu::new();
-        let mut render =
-            |availability| render_game(puzzle, Styles::default(), &mut menu, availability);
+        let mut render = |availability| {
+            render_game(puzzle, Styles::default(), &mut menu, availability, usize::MAX)
+        };
 
         let fresh = ActionAvailability { can_undo: false, can_redo: false };
         let mid_game = ActionAvailability { can_undo: true, can_redo: true };
@@ -1512,6 +1533,20 @@ mod tests {
         let mut expected = canvas(dimensions);
         draw_grid_lines(&mut expected, dimensions);
 
-        assert_eq!(flatten_to_lines(&actual), flatten_to_lines(&expected));
+        assert_eq!(flatten_to_lines(&actual, usize::MAX), flatten_to_lines(&expected, usize::MAX));
+    }
+
+    /// A line cut at the terminal's edge still ends with its resets, so
+    /// reverse video can't run on past it.
+    #[test]
+    fn flatten_cuts_lines_at_the_terminal_edge_and_still_closes_them() {
+        let mut canvas = canvas((1, 1));
+        canvas.mark_region([Coord::new(0, 0), Coord::new(1, 0)], Mark::Reversed);
+
+        let lines = flatten_to_lines(&canvas, 1);
+
+        let reverse = SetAttribute(Attribute::Reverse);
+        let no_reverse = SetAttribute(Attribute::NoReverse);
+        assert_eq!(lines[0], format!("{reverse}{}{no_reverse}", canvas.char_at((0, 0))));
     }
 }

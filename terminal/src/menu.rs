@@ -15,6 +15,8 @@ pub(crate) struct Menu {
     /// or clicked.
     top_left: Coord,
     divider_length: usize,
+    /// How wide the terminal is. Headers stop at its edge.
+    terminal_columns: usize,
     /// What the menu's focus is on. When it's `None`, the board has it.
     focus: Option<Focus>,
 }
@@ -29,8 +31,8 @@ enum Focus {
 }
 
 impl Menu {
-    /// Builds the menu with every named tab closed, at the top left of
-    /// the screen until `place_beside_board` moves it.
+    /// Builds the menu with every named tab closed, drawn at the top left
+    /// of the screen until `set_placement` says where it goes.
     pub(crate) fn new() -> Menu {
         let tabs = TABS
             .iter()
@@ -41,18 +43,12 @@ impl Menu {
             size: Size::new(0, 0),
             top_left: Coord::new(0, 0),
             divider_length: 0,
+            terminal_columns: usize::MAX,
             focus: None,
         };
 
         menu.refresh_tabs();
         menu
-    }
-
-    /// Moves the menu to start just right of the board, level with its
-    /// top, with its divider running the board's full height.
-    pub(crate) fn place_beside_board(&mut self, board_rect: Rect) {
-        self.top_left = Coord::new(board_rect.right() + 1, board_rect.top());
-        self.divider_length = board_rect.bottom() - board_rect.top() + 1;
     }
 
     /// Refreshes each tab's header and any body it's showing, top to
@@ -78,6 +74,15 @@ impl Menu {
         self.size = Size::new(MENU_MARGIN + width, row);
     }
 
+    /// Sets the menu's position just right of the board, level with its
+    /// top, with its divider running the board's full height and its
+    /// headers stopping at the terminal's edge.
+    pub(crate) fn set_placement(&mut self, board_rect: Rect, terminal_columns: usize) {
+        self.top_left = Coord::new(board_rect.right() + 1, board_rect.top());
+        self.divider_length = board_rect.bottom() - board_rect.top() + 1;
+        self.terminal_columns = terminal_columns;
+    }
+
     /// Draws the divider, then each tab's header and any body it's
     /// showing.
     pub(crate) fn draw(
@@ -93,7 +98,7 @@ impl Menu {
         for (index, tab) in self.tabs.iter().enumerate() {
             if let Some(header) = &tab.header {
                 let focused = self.focus == Some(Focus::Header(index));
-                draw_header(canvas, header, offset, tab.open, focused);
+                draw_header(canvas, header, offset, self.terminal_columns, tab.open, focused);
             }
             match &tab.body {
                 Some(Body::Buttons(buttons)) => {
@@ -524,22 +529,31 @@ fn draw_divider(canvas: &mut Canvas, offset: Coord, length: usize) {
 
 /// Draws a header: a line across the menu, the tab's name written
 /// over it, and an arrow at the right end showing which way a click
-/// will take it. The line is heavy while the tab has focus.
-fn draw_header(canvas: &mut Canvas, header: &Header, offset: Coord, open: bool, focused: bool) {
+/// will take it. The line and its arrow stop at the terminal's edge,
+/// and the line is heavy while the tab has focus.
+fn draw_header(
+    canvas: &mut Canvas,
+    header: &Header,
+    offset: Coord,
+    terminal_columns: usize,
+    open: bool,
+    focused: bool,
+) {
     let rect = header.rect.shifted_by(offset);
     let row = rect.top();
+    let right = rect.right().min(terminal_columns.saturating_sub(1));
     let weight = if focused {
         Weight::Heavy
     } else {
         Weight::Light
     };
-    draw_line(canvas, (rect.left(), row), (rect.right(), row), weight);
+    draw_line(canvas, (rect.left(), row), (right, row), weight);
 
     let name_start = Coord::new(rect.left() + HEADER_NAME_OFFSET, row);
     let name = format!(" {} ", header.name);
     canvas.draw_text_marked(name_start, &name, focused.then_some(Mark::Bold));
 
-    canvas.draw_text((rect.right(), row), if open { "▲" } else { "▼" });
+    canvas.draw_text((right, row), if open { "▲" } else { "▼" });
 }
 
 /// Draws a legend's groups from its top left, each label above its own
@@ -711,7 +725,7 @@ mod tests {
     #[test]
     fn clicks_find_a_moved_menu_where_it_sits() {
         let mut menu = Menu::new();
-        menu.place_beside_board(Rect::new(Coord::new(0, 0), Size::new(25, 14)));
+        menu.set_placement(Rect::new(Coord::new(0, 0), Size::new(25, 14)), usize::MAX);
 
         assert!(matches!(menu.click((28, 0)), Some(Action::NewGame)));
         assert!(menu.click((3, 0)).is_none());
