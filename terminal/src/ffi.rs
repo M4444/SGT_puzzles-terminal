@@ -1,6 +1,6 @@
 //! Raw bindings against the mid-end.
 
-use std::ffi::{c_double, c_float, c_int, c_void};
+use std::ffi::{CStr, c_char, c_double, c_float, c_int, c_void};
 use std::ptr;
 use std::ptr::NonNull;
 
@@ -33,6 +33,30 @@ pub(crate) struct RawDrawing {
     pub(crate) handle: *mut c_void,
 }
 
+#[repr(C)]
+struct RawGameParams {
+    _private: [u8; 0],
+}
+
+/// Mirrors `struct preset_menu_entry` (`puzzles.h`). An entry holds a
+/// preset when `params` is set and a submenu when `submenu` is, never
+/// both.
+#[repr(C)]
+struct RawPresetMenuEntry {
+    title: *const c_char,
+    params: *mut RawGameParams,
+    submenu: *const RawPresetMenu,
+    id: c_int,
+}
+
+/// Mirrors `struct preset_menu` (`puzzles.h`).
+#[repr(C)]
+struct RawPresetMenu {
+    n_entries: c_int,
+    entries_size: c_int,
+    entries: *const RawPresetMenuEntry,
+}
+
 unsafe extern "C" {
     fn midend_new(
         fe: *mut c_void,
@@ -56,6 +80,10 @@ unsafe extern "C" {
         device_pixel_ratio: c_double,
     );
     fn midend_tilesize(me: *mut RawMidend) -> c_int;
+    fn midend_get_presets(me: *mut RawMidend, id_limit: *mut c_int) -> *const RawPresetMenu;
+    fn midend_which_preset(me: *mut RawMidend) -> c_int;
+    fn midend_set_params(me: *mut RawMidend, params: *mut RawGameParams);
+    fn preset_menu_lookup_by_id(menu: *const RawPresetMenu, id: c_int) -> *mut RawGameParams;
     /// Reads net.c's own `WINDOW_OFFSET` from a small function in
     /// `terminal.c` that mirrors its `#ifdef SMALL_SCREEN` exactly, so
     /// it can never drift from net.c's real value.
@@ -71,11 +99,22 @@ const SKIP_ANIMATION_TIME: c_float = 1.0;
 /// should quit (puzzles.h's `PKR_QUIT`).
 const PKR_QUIT: c_int = 0;
 
+/// The value `midend_which_preset` returns when the current parameters
+/// match no preset, which is what a custom game gives.
+const NO_PRESET: c_int = -1;
+
 /// A live mid-end handle. Every drawing call silently no-ops, except
 /// `emit_state` and `status_bar` (see `net.rs`), which hand the puzzle
 /// state and status text back to Rust.
 pub(crate) struct Midend {
     raw: NonNull<RawMidend>,
+}
+
+/// One preset the mid-end offers, under the id it allocated for it.
+/// The id is what `which_preset` returns and what `set_preset` takes.
+pub(crate) struct Preset {
+    pub(crate) id: usize,
+    pub(crate) title: String,
 }
 
 impl Midend {
@@ -139,6 +178,35 @@ impl Midend {
         unsafe { midend_redraw(self.raw.as_ptr()) };
     }
 
+    /// Every preset the mid-end offers, flattened out of the menu tree
+    /// it hands back. The tree belongs to the mid-end and outlives this
+    /// call, so the titles are copied out of it.
+    pub(crate) fn presets(&self) -> Vec<Preset> {
+        let menu = unsafe { midend_get_presets(self.raw.as_ptr(), ptr::null_mut()) };
+        let mut presets = Vec::new();
+
+        collect_presets(menu, &mut presets);
+        presets
+    }
+
+    /// The preset the current game matches, or `None` for a custom one.
+    pub(crate) fn which_preset(&self) -> Option<usize> {
+        let id = unsafe { midend_which_preset(self.raw.as_ptr()) };
+
+        (id != NO_PRESET).then_some(id as usize)
+    }
+
+    /// Switches to a preset and starts a fresh game at it, the way the
+    /// other front ends do.
+    pub(crate) fn set_preset(&self, id: usize) {
+        let menu = unsafe { midend_get_presets(self.raw.as_ptr(), ptr::null_mut()) };
+        let params = unsafe { preset_menu_lookup_by_id(menu, id as c_int) };
+        assert!(!params.is_null(), "no preset has id {id}");
+
+        unsafe { midend_set_params(self.raw.as_ptr(), params) };
+        self.new_game();
+    }
+
     /// Sends one key/button press, then force-finishes any resulting
     /// animation so the next redraw shows the real final state, rather
     /// than the pre-move state an in-progress animation shows. Returns
@@ -159,6 +227,22 @@ impl Midend {
         unsafe { midend_timer(self.raw.as_ptr(), SKIP_ANIMATION_TIME) };
 
         result != PKR_QUIT
+    }
+}
+
+/// Walks one level of the preset menu, following submenus down.
+fn collect_presets(menu: *const RawPresetMenu, presets: &mut Vec<Preset>) {
+    let menu = unsafe { &*menu };
+    let entries = unsafe { std::slice::from_raw_parts(menu.entries, menu.n_entries as usize) };
+
+    for entry in entries {
+        if entry.params.is_null() {
+            collect_presets(entry.submenu, presets);
+            continue;
+        }
+
+        let title = unsafe { CStr::from_ptr(entry.title) }.to_string_lossy().into_owned();
+        presets.push(Preset { id: entry.id as usize, title });
     }
 }
 

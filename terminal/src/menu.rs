@@ -1,6 +1,7 @@
 //! The side menu: the tabs beside the board, separated from it by a
 //! divider.
 
+use crate::ffi::Preset;
 use crate::render::{
     Canvas, Coord, CursorStyle, LockStyle, Mark, Rect, Size, Styles, Weight, draw_line,
     draw_rect_outline,
@@ -33,9 +34,9 @@ enum Focus {
 impl Menu {
     /// Builds the menu with every named tab closed, drawn at the top left
     /// of the screen until `set_placement` says where it goes.
-    pub(crate) fn new() -> Menu {
-        let tabs = TABS
-            .iter()
+    pub(crate) fn new(presets: &[Preset]) -> Menu {
+        let tabs = tab_specs(presets)
+            .into_iter()
             .map(|spec| Tab { spec, open: false, cursor: 0, header: None, body: None })
             .collect();
         let mut menu = Menu {
@@ -55,7 +56,7 @@ impl Menu {
     /// bottom to the right of the divider, and calculates the menu's
     /// size from that.
     fn refresh_tabs(&mut self) {
-        let width = TABS.iter().map(TabSpec::width).max().unwrap_or(0);
+        let width = self.tabs.iter().map(|tab| tab.spec.width()).max().unwrap_or(0);
         let mut row = 0;
 
         for tab in &mut self.tabs {
@@ -85,12 +86,7 @@ impl Menu {
 
     /// Draws the divider, then each tab's header and any body it's
     /// showing.
-    pub(crate) fn draw(
-        &self,
-        canvas: &mut Canvas,
-        availability: ActionAvailability,
-        styles: Styles,
-    ) {
+    pub(crate) fn draw(&self, canvas: &mut Canvas, menu_state: MenuState) {
         let offset = self.top_left;
 
         draw_divider(canvas, offset, self.divider_length);
@@ -105,7 +101,7 @@ impl Menu {
                     let focused = self.focus == Some(Focus::Buttons(index));
                     for (position, button) in buttons.iter().enumerate() {
                         let has_cursor = focused && position == tab.cursor;
-                        draw_button(canvas, button, offset, availability, has_cursor, styles);
+                        draw_button(canvas, button, offset, has_cursor, menu_state);
                     }
                 }
                 Some(Body::Legend(legend)) => draw_legend(canvas, legend, offset),
@@ -224,15 +220,15 @@ struct TabSpec {
 /// What a tab shows. Choices are buttons standing for one setting's
 /// options, so each carries a tick column showing which is in use.
 enum BodySpec {
-    Buttons(&'static [ButtonSpec]),
-    Choices(&'static [ButtonSpec]),
+    Buttons(Vec<ButtonSpec>),
+    Choices(Vec<ButtonSpec>),
     Legend(&'static [LegendGroup]),
 }
 
 /// A tab's header and body. An unnamed tab has no header. A closed one
 /// has no body.
 struct Tab {
-    spec: &'static TabSpec,
+    spec: TabSpec,
     open: bool,
     /// Where the cursor sits among the tab's buttons.
     cursor: usize,
@@ -352,44 +348,73 @@ pub(crate) enum Action {
     Quit,
     SetCursorStyle(CursorStyle),
     SetLockStyle(LockStyle),
+    SetPreset(usize),
 }
 
 /// Shown in a choice button's tick column when it's the current one.
 const TICK: char = '✓';
 
-/// Whether a choice's action sets the style the board already uses.
-fn is_current(action: Action, styles: Styles) -> bool {
+/// What the menu shows of the game as it is right now. It holds the
+/// styles the board is drawn with, the preset the game is at, and
+/// whether there is a move to undo or redo.
+#[derive(Clone, Copy, Debug, Default)]
+pub(crate) struct MenuState {
+    pub styles: Styles,
+    pub preset: Option<usize>,
+    pub can_undo: bool,
+    pub can_redo: bool,
+}
+
+/// Whether a choice's action sets what the game already uses.
+fn is_current(action: Action, menu_state: MenuState) -> bool {
     match action {
-        Action::SetCursorStyle(style) => style == styles.cursor,
-        Action::SetLockStyle(style) => style == styles.lock,
+        Action::SetCursorStyle(style) => style == menu_state.styles.cursor,
+        Action::SetLockStyle(style) => style == menu_state.styles.lock,
+        Action::SetPreset(id) => menu_state.preset == Some(id),
         _ => false,
     }
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 struct ButtonSpec {
     action: Action,
-    label: &'static str,
+    label: String,
+}
+
+impl ButtonSpec {
+    fn new(action: Action, label: &str) -> ButtonSpec {
+        ButtonSpec { action, label: label.to_string() }
+    }
 }
 
 /// One button of the menu, with the rectangle it occupies within it.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 struct Button {
-    spec: &'static ButtonSpec,
+    spec: ButtonSpec,
     rect: Rect,
     /// Whether the button is one of a set of choices.
     choice: bool,
 }
 
 /// The actions every game's menu offers.
-const COMMON_ACTIONS: &[ButtonSpec] = &[
-    ButtonSpec { action: Action::NewGame, label: "New Game" },
-    ButtonSpec { action: Action::Restart, label: "Restart" },
-    ButtonSpec { action: Action::Undo, label: "Undo" },
-    ButtonSpec { action: Action::Redo, label: "Redo" },
-    ButtonSpec { action: Action::Solve, label: "Solve" },
-    ButtonSpec { action: Action::Quit, label: "Quit" },
-];
+fn common_actions() -> Vec<ButtonSpec> {
+    vec![
+        ButtonSpec::new(Action::NewGame, "New Game"),
+        ButtonSpec::new(Action::Restart, "Restart"),
+        ButtonSpec::new(Action::Undo, "Undo"),
+        ButtonSpec::new(Action::Redo, "Redo"),
+        ButtonSpec::new(Action::Solve, "Solve"),
+        ButtonSpec::new(Action::Quit, "Quit"),
+    ]
+}
+
+/// The presets the game offers, in the order the mid-end lists them.
+fn preset_buttons(presets: &[Preset]) -> Vec<ButtonSpec> {
+    presets
+        .iter()
+        .map(|preset| ButtonSpec::new(Action::SetPreset(preset.id), &preset.title))
+        .collect()
+}
 
 /// The keys the mid-end takes, which only reach it while the board has
 /// focus.
@@ -415,26 +440,33 @@ const MENU_CONTROLS: &[LegendGroup] = &[
     LegendGroup { label: Some("Menu:"), entries: MENU_KEYS },
 ];
 
-const CURSOR_STYLES: &[ButtonSpec] = &[
-    ButtonSpec { action: Action::SetCursorStyle(CursorStyle::Outline), label: "Outline" },
-    ButtonSpec { action: Action::SetCursorStyle(CursorStyle::ReverseTileCenter), label: "Center" },
-    ButtonSpec { action: Action::SetCursorStyle(CursorStyle::ReverseTileFull), label: "Full" },
-];
+fn cursor_styles() -> Vec<ButtonSpec> {
+    vec![
+        ButtonSpec::new(Action::SetCursorStyle(CursorStyle::Outline), "Outline"),
+        ButtonSpec::new(Action::SetCursorStyle(CursorStyle::ReverseTileCenter), "Center"),
+        ButtonSpec::new(Action::SetCursorStyle(CursorStyle::ReverseTileFull), "Full"),
+    ]
+}
 
-const LOCK_STYLES: &[ButtonSpec] = &[
-    ButtonSpec { action: Action::SetLockStyle(LockStyle::ReverseTileConnected), label: "Merged" },
-    ButtonSpec { action: Action::SetLockStyle(LockStyle::ReverseTileCenter), label: "Center" },
-    ButtonSpec { action: Action::SetLockStyle(LockStyle::ReverseTileFull), label: "Full" },
-];
+fn lock_styles() -> Vec<ButtonSpec> {
+    vec![
+        ButtonSpec::new(Action::SetLockStyle(LockStyle::ReverseTileConnected), "Merged"),
+        ButtonSpec::new(Action::SetLockStyle(LockStyle::ReverseTileCenter), "Center"),
+        ButtonSpec::new(Action::SetLockStyle(LockStyle::ReverseTileFull), "Full"),
+    ]
+}
 
 /// The menu's tabs, in the order they appear.
-const TABS: &[TabSpec] = &[
-    TabSpec { name: None, body: BodySpec::Buttons(COMMON_ACTIONS) },
-    TabSpec { name: Some("Cursor Style"), body: BodySpec::Choices(CURSOR_STYLES) },
-    TabSpec { name: Some("Lock Style"), body: BodySpec::Choices(LOCK_STYLES) },
-    TabSpec { name: Some("Menu Controls"), body: BodySpec::Legend(MENU_CONTROLS) },
-    TabSpec { name: Some("Game Controls"), body: BodySpec::Legend(crate::net::GAME_CONTROLS) },
-];
+fn tab_specs(presets: &[Preset]) -> Vec<TabSpec> {
+    vec![
+        TabSpec { name: None, body: BodySpec::Buttons(common_actions()) },
+        TabSpec { name: Some("Type"), body: BodySpec::Choices(preset_buttons(presets)) },
+        TabSpec { name: Some("Cursor Style"), body: BodySpec::Choices(cursor_styles()) },
+        TabSpec { name: Some("Lock Style"), body: BodySpec::Choices(lock_styles()) },
+        TabSpec { name: Some("Menu Controls"), body: BodySpec::Legend(MENU_CONTROLS) },
+        TabSpec { name: Some("Game Controls"), body: BodySpec::Legend(crate::net::GAME_CONTROLS) },
+    ]
+}
 
 /// Columns of line before a header's padded name starts, so the name
 /// reads as sitting on the line.
@@ -505,7 +537,7 @@ fn buttons_width(specs: &[ButtonSpec], choice: bool) -> usize {
     specs.iter().map(|spec| button_width(spec, choice)).sum()
 }
 
-fn place_buttons(specs: &'static [ButtonSpec], top_left: Coord, choice: bool) -> Vec<Button> {
+fn place_buttons(specs: &[ButtonSpec], top_left: Coord, choice: bool) -> Vec<Button> {
     let mut x = top_left.x;
     specs
         .iter()
@@ -513,7 +545,7 @@ fn place_buttons(specs: &'static [ButtonSpec], top_left: Coord, choice: bool) ->
             let size = Size::new(button_width(spec, choice), BUTTON_HEIGHT);
             let rect = Rect::new(Coord::new(x, top_left.y), size);
             x += size.width;
-            Button { spec, rect, choice }
+            Button { spec: spec.clone(), rect, choice }
         })
         .collect()
 }
@@ -595,9 +627,8 @@ fn draw_button(
     canvas: &mut Canvas,
     button: &Button,
     offset: Coord,
-    availability: ActionAvailability,
     has_cursor: bool,
-    styles: Styles,
+    menu_state: MenuState,
 ) {
     let rect = button.rect.shifted_by(offset);
     let weight = if has_cursor {
@@ -609,7 +640,7 @@ fn draw_button(
 
     let label_start = Coord::new(rect.left() + 1, rect.top() + 1);
     let label = if button.choice {
-        let tick = if is_current(button.spec.action, styles) {
+        let tick = if is_current(button.spec.action, menu_state) {
             TICK
         } else {
             ' '
@@ -620,25 +651,17 @@ fn draw_button(
     };
     canvas.draw_text_marked(label_start, &label, has_cursor.then_some(Mark::Bold));
 
-    if !available(button.spec.action, availability) {
+    if !available(button.spec.action, menu_state) {
         canvas.mark_region(rect.coords(), Mark::Dimmed);
     }
 }
 
-/// What the menu needs from the game to draw itself: the actions whose
-/// availability depends on the move history.
-#[derive(Clone, Copy, Debug)]
-pub(crate) struct ActionAvailability {
-    pub can_undo: bool,
-    pub can_redo: bool,
-}
-
 /// Whether an action can be taken right now. Every action but Undo and
 /// Redo is always available.
-fn available(action: Action, availability: ActionAvailability) -> bool {
+fn available(action: Action, menu_state: MenuState) -> bool {
     match action {
-        Action::Undo => availability.can_undo,
-        Action::Redo => availability.can_redo,
+        Action::Undo => menu_state.can_undo,
+        Action::Redo => menu_state.can_redo,
         _ => true,
     }
 }
@@ -647,57 +670,75 @@ fn available(action: Action, availability: ActionAvailability) -> bool {
 mod tests {
     use super::*;
 
+    /// The ten presets Net offers, in the order it lists them.
+    fn presets() -> Vec<Preset> {
+        let sizes = ["5x5", "7x7", "9x9", "11x11", "13x11"];
+        let plain = sizes.iter().map(|size| size.to_string());
+        let wrapping = sizes.iter().map(|size| format!("{size} wrapping"));
+
+        plain
+            .chain(wrapping)
+            .enumerate()
+            .map(|(id, title)| Preset { id, title })
+            .collect()
+    }
+
+    /// A menu with Net's presets and every tab closed.
+    fn menu() -> Menu {
+        Menu::new(&presets())
+    }
+
     /// The widest tab sets the width, open or not, so opening one
-    /// never shifts the menu sideways. The legend's longest row is
-    /// 57 columns against the button row's 56.
+    /// never shifts the menu sideways. Type's ten presets take 143
+    /// columns in a single row, far past the legend's longest of 57.
     #[test]
     fn menu_width_is_its_widest_tab_and_the_margin() {
-        assert_eq!(Menu::new().size().width, 60);
+        assert_eq!(menu().size().width, 146);
     }
 
     /// A closed tab shows its header and nothing else.
     #[test]
     fn a_closed_tab_costs_only_its_header() {
-        // The button row's three, and a header each for the four
+        // The button row's three, and a header each for the five
         // named tabs.
-        assert_eq!(Menu::new().size().height, 7);
+        assert_eq!(menu().size().height, 8);
     }
 
     /// Clicking a header returns no action and opens the tab, making room
     /// for its body.
     #[test]
     fn clicking_a_header_opens_the_tab() {
-        let mut menu = Menu::new();
-        // Cursor Style's header, on the row below the button row.
-        assert!(menu.click((3, 3)).is_none());
+        let mut menu = menu();
+        // Cursor Style's header, two rows below the button row.
+        assert!(menu.click((3, 4)).is_none());
 
         // Its buttons take one row of three, like any button body.
-        assert_eq!(menu.size().height, 7 + BUTTON_HEIGHT);
+        assert_eq!(menu.size().height, 8 + BUTTON_HEIGHT);
 
-        assert!(menu.click((3, 3)).is_none());
-        assert_eq!(menu.size().height, 7);
+        assert!(menu.click((3, 4)).is_none());
+        assert_eq!(menu.size().height, 8);
     }
 
-    fn unavailable_labels(availability: ActionAvailability) -> Vec<&'static str> {
-        COMMON_ACTIONS
-            .iter()
-            .filter(|spec| !available(spec.action, availability))
+    fn unavailable_labels(menu_state: MenuState) -> Vec<String> {
+        common_actions()
+            .into_iter()
+            .filter(|spec| !available(spec.action, menu_state))
             .map(|spec| spec.label)
             .collect()
     }
 
     #[test]
     fn only_undo_and_redo_can_be_unavailable() {
-        let neither = ActionAvailability { can_undo: false, can_redo: false };
+        let neither = MenuState { can_undo: false, can_redo: false, ..MenuState::default() };
         assert_eq!(unavailable_labels(neither), ["Undo", "Redo"]);
 
-        let both = ActionAvailability { can_undo: true, can_redo: true };
+        let both = MenuState { can_undo: true, can_redo: true, ..MenuState::default() };
         assert!(unavailable_labels(both).is_empty());
     }
 
     #[test]
     fn undo_and_redo_are_independent() {
-        let undo_only = ActionAvailability { can_undo: true, can_redo: false };
+        let undo_only = MenuState { can_undo: true, can_redo: false, ..MenuState::default() };
         assert_eq!(unavailable_labels(undo_only), ["Redo"]);
     }
 
@@ -706,7 +747,7 @@ mod tests {
     /// run to column 58.
     #[test]
     fn a_click_lands_on_the_button_it_is_over() {
-        let mut menu = Menu::new();
+        let mut menu = menu();
         let mut find = |x, y| menu.click((x, y));
 
         assert!(matches!(find(3, 0), Some(Action::NewGame)));
@@ -717,14 +758,14 @@ mod tests {
         // Left of the row, past its end, and below every tab.
         assert!(find(2, 0).is_none());
         assert!(find(59, 0).is_none());
-        assert!(find(3, 7).is_none());
+        assert!(find(3, 8).is_none());
     }
 
     /// Clicks arrive in screen coordinates, so a moved menu takes them
     /// where it now sits and ignores the spot it left.
     #[test]
     fn clicks_find_a_moved_menu_where_it_sits() {
-        let mut menu = Menu::new();
+        let mut menu = menu();
         menu.set_placement(Rect::new(Coord::new(0, 0), Size::new(25, 14)), usize::MAX);
 
         assert!(matches!(menu.click((28, 0)), Some(Action::NewGame)));
@@ -736,9 +777,9 @@ mod tests {
     /// the board.
     #[test]
     fn focus_visits_every_header_and_row_of_buttons() {
-        let mut menu = Menu::new();
+        let mut menu = menu();
         let mut visited = Vec::new();
-        for _ in 0..6 {
+        for _ in 0..7 {
             menu.focus_next();
             visited.push(menu.focus);
         }
@@ -751,6 +792,7 @@ mod tests {
                 Some(Focus::Header(2)),
                 Some(Focus::Header(3)),
                 Some(Focus::Header(4)),
+                Some(Focus::Header(5)),
                 None,
             ]
         );
@@ -760,15 +802,15 @@ mod tests {
     /// nowhere new to stop, where opening a row of buttons does.
     #[test]
     fn only_buttons_give_the_focus_somewhere_to_stop() {
-        let mut menu = Menu::new();
+        let mut menu = menu();
         let closed = menu.focus_order().count();
 
-        // Menu Controls, the third header down.
-        menu.click((3, 5));
+        // Menu Controls, the fourth header down.
+        menu.click((3, 6));
         assert_eq!(menu.focus_order().count(), closed);
 
-        // Cursor Style, the first.
-        menu.click((3, 3));
+        // Cursor Style, the second.
+        menu.click((3, 4));
         assert_eq!(menu.focus_order().count(), closed + 1);
     }
 
@@ -776,7 +818,7 @@ mod tests {
     /// last place.
     #[test]
     fn focus_previous_reverses_focus_next() {
-        let mut menu = Menu::new();
+        let mut menu = menu();
         menu.focus_next();
         menu.focus_next();
         let two_in = menu.focus;
@@ -787,17 +829,18 @@ mod tests {
 
         menu.clear_focus();
         menu.focus_previous();
-        assert_eq!(menu.focus, Some(Focus::Header(4)));
+        assert_eq!(menu.focus, Some(Focus::Header(5)));
     }
 
     /// A press on a header opens or closes its tab and gives no
     /// action, where a press on buttons gives the one under the cursor.
     #[test]
     fn pressing_a_header_opens_it_and_pressing_buttons_acts() {
-        let mut menu = Menu::new();
+        let mut menu = menu();
         let closed_height = menu.size().height;
 
-        // Cursor Style's header, the second place the focus visits.
+        // Cursor Style's header, the third place the focus visits.
+        menu.focus_next();
         menu.focus_next();
         menu.focus_next();
         assert!(menu.press().is_none());
@@ -809,5 +852,16 @@ mod tests {
         menu.clear_focus();
         menu.focus_next();
         assert!(matches!(menu.press(), Some(Action::NewGame)));
+    }
+
+    /// A preset's button is ticked only while the game is at it.
+    #[test]
+    fn only_the_current_preset_is_ticked() {
+        let at_third = MenuState { preset: Some(3), ..MenuState::default() };
+        let custom = MenuState { preset: None, ..MenuState::default() };
+
+        assert!(is_current(Action::SetPreset(3), at_third));
+        assert!(!is_current(Action::SetPreset(4), at_third));
+        assert!(!is_current(Action::SetPreset(3), custom));
     }
 }

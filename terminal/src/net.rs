@@ -1,6 +1,6 @@
 //! Generating and reading Net puzzles.
 
-use crate::ffi::{Midend, RawDrawing, RawDrawingApi, RawGame, RawGameState, window_offset};
+use crate::ffi::{Midend, Preset, RawDrawing, RawDrawingApi, RawGame, RawGameState, window_offset};
 use crate::menu::{LegendEntry, LegendGroup};
 use std::ffi::{CStr, c_char, c_int, c_void};
 
@@ -263,6 +263,21 @@ impl Session {
         self.midend.can_redo()
     }
 
+    pub(crate) fn presets(&self) -> Vec<Preset> {
+        self.midend.presets()
+    }
+
+    pub(crate) fn which_preset(&self) -> Option<usize> {
+        self.midend.which_preset()
+    }
+
+    /// Starts a fresh game at the given preset, which needs its own
+    /// redraw the way `restart` does.
+    pub(crate) fn set_preset(&mut self, id: usize) {
+        self.midend.set_preset(id);
+        self.midend.redraw();
+    }
+
     /// Sends one mouse button press on the given tile, converting it
     /// into the pixel coordinates net.c's own click handling expects.
     /// Returns `false` if it signalled quit.
@@ -291,4 +306,44 @@ impl Session {
 /// the same way regardless of platform.
 fn line_thick(tilesize: c_int) -> c_int {
     (tilesize + 47) / 48
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Net offers five sizes, then the same five wrapping.
+    #[test]
+    fn presets_are_the_sizes_net_lists() {
+        let titles: Vec<String> = Session::new()
+            .presets()
+            .into_iter()
+            .map(|preset| preset.title)
+            .collect();
+
+        assert_eq!(titles.len(), 10);
+        assert_eq!(titles[0], "5x5");
+        assert_eq!(titles[4], "13x11");
+        assert_eq!(titles[5], "5x5 wrapping");
+        assert_eq!(titles[9], "13x11 wrapping");
+    }
+
+    /// A fresh game starts on the first preset, and choosing another
+    /// one starts a new game at its size.
+    #[test]
+    fn setting_a_preset_starts_a_game_at_its_size() {
+        let mut session = Session::new();
+        let presets = session.presets();
+        let nine_by_nine = presets
+            .iter()
+            .find(|preset| preset.title == "9x9")
+            .expect("a 9x9 preset");
+
+        assert_eq!(session.which_preset(), Some(presets[0].id));
+
+        session.set_preset(nine_by_nine.id);
+
+        assert_eq!(session.puzzle().dimensions, (9, 9));
+        assert_eq!(session.which_preset(), Some(nine_by_nine.id));
+    }
 }

@@ -54,16 +54,19 @@ fn main() {
     let (mut columns, mut rows) = terminal::size().expect("failed to query terminal size");
 
     let mut session = net::Session::new();
-    let mut menu = menu::Menu::new();
+    let mut menu = menu::Menu::new(&session.presets());
 
     let mut styles = render::Styles::default();
 
     let mut game_running = true;
     while game_running {
-        let availability =
-            menu::ActionAvailability { can_undo: session.can_undo(), can_redo: session.can_redo() };
-        let output =
-            render::render_game(session.puzzle(), styles, &mut menu, availability, columns.into());
+        let menu_state = menu::MenuState {
+            styles,
+            preset: session.which_preset(),
+            can_undo: session.can_undo(),
+            can_redo: session.can_redo(),
+        };
+        let output = render::render_game(session.puzzle(), menu_state, &mut menu, columns.into());
 
         // Anything past the last row would scroll the top away.
         let output: Vec<&str> = output.lines().take(rows.into()).collect();
@@ -196,6 +199,10 @@ fn take_action(action: menu::Action, session: &mut Session, styles: &mut render:
         }
         menu::Action::SetLockStyle(style) => {
             styles.lock = style;
+            true
+        }
+        menu::Action::SetPreset(id) => {
+            session.set_preset(id);
             true
         }
     }
