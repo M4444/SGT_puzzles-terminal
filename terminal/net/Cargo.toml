@@ -13,4 +13,3 @@ cc = "1"
 [dependencies]
 common = { path = "../common" }
 crossterm = "0.29.0"
-rand = "0.10.2"

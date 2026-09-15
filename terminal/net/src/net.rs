@@ -1,8 +1,9 @@
 //! Generating and reading Net puzzles.
 
-use crate::ffi::{Midend, Preset, RawDrawing, RawDrawingApi, RawGame, RawGameState, window_offset};
+use crate::ffi::window_offset;
 use crate::menu::{LegendEntry, LegendGroup};
 use common::board::{Grid, GridDimensions, TileCoord};
+use common::ffi::{Midend, Preset, RawDrawing, RawDrawingApi, RawGame, RawGameState};
 use std::ffi::{CStr, c_char, c_int, c_void};
 
 unsafe extern "C" {
@@ -198,8 +199,7 @@ impl Session {
         let mut frontend = Box::new(Frontend::default());
         let frontend_ptr = &mut *frontend as *mut Frontend as *mut c_void;
 
-        let midend =
-            Midend::new(unsafe { &THEGAME }, unsafe { &TERMINAL_DRAWING_API }, frontend_ptr);
+        let midend = unsafe { Midend::new(&THEGAME, &TERMINAL_DRAWING_API, frontend_ptr) };
         midend.new_game();
         midend.redraw();
 

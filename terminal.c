@@ -1,10 +1,12 @@
 /*
  * terminal.c: terminal front end for my puzzle collection. Stub
  * implementations of the mid-end's frontend callbacks and the drawing
- * API, except emit_state() (hands the current game state to the Rust
- * side) and status_bar() (hands the status line text to the Rust
- * side). Every other drawing call is a no-op, since this front end
- * renders text directly.
+ * API shared by every game. Every drawing call here is a no-op, since
+ * this front end renders text directly. The exceptions are
+ * status_bar() and emit_state(), which hand the status line text and
+ * the game state to the Rust side.
+ * Each game's own file, terminal/<game>/terminal-<game>.c, holds what
+ * only that game needs.
  */
 
 #include <stdarg.h>
@@ -12,12 +14,15 @@
 #include "puzzles.h"
 
 extern void rust_status_bar(drawing *dr, const char *text);
-
-/* Returns net.c's own WINDOW_OFFSET, which it never exposes outside
- * its own compilation unit. Mirrors its #ifdef exactly, so this
- * always matches net.c's real value regardless of whether
- * SMALL_SCREEN is defined. */
-int window_offset(void);
+#ifdef EXPOSE_GAME_STATE
+extern void rust_emit_state(drawing *dr, const game_state *state,
+			    const unsigned char *active, const unsigned char *tiles,
+			    const unsigned char *barriers,
+			    int width, int height,
+			    int cur_x, int cur_y, bool cur_visible,
+			    int source_x, int source_y,
+			    int org_x, int org_y);
+#endif
 
 void frontend_default_colour(frontend *fe, float *output) {}
 void deactivate_timer(frontend *fe) {}
@@ -66,24 +71,9 @@ int print_rgb_hatched_colour(drawing *dr, float r, float g, float b, int hatch)
 void print_line_width(drawing *dr, int width) {}
 void print_line_dotted(drawing *dr, bool dotted) {}
 void status_bar(drawing *dr, const char *text) { rust_status_bar(dr, text); }
-int window_offset(void)
-{
-#ifndef SMALL_SCREEN
-    return 16;
-#else
-    return 4;
-#endif
-}
 void document_add_puzzle(document *doc, const game *game, game_params *par,
 			 game_ui *ui, game_state *st, game_state *st2) {}
 #ifdef EXPOSE_GAME_STATE
-extern void rust_emit_state(drawing *dr, const game_state *state,
-			    const unsigned char *active, const unsigned char *tiles,
-			    const unsigned char *barriers,
-			    int width, int height,
-			    int cur_x, int cur_y, bool cur_visible,
-			    int source_x, int source_y,
-			    int org_x, int org_y);
 const drawing_api terminal_drawing_api = {
     .version = 1,
     .emit_state = rust_emit_state,

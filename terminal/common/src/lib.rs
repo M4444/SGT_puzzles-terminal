@@ -2,3 +2,4 @@
 
 pub mod board;
 pub mod canvas;
+pub mod ffi;

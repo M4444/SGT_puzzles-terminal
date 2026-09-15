@@ -1,10 +1,18 @@
 fn main() {
-    let sources = ["../../net.c", "terminal-net.c"];
+    let sources = [
+        "../../dsf.c",
+        "../../findloop.c",
+        "../../malloc.c",
+        "../../midend.c",
+        "../../misc.c",
+        "../../random.c",
+        "../../terminal.c",
+        "../../tree234.c",
+    ];
     let headers = ["../../puzzles.h", "../../tree234.h"];
 
     let mut build = cc::Build::new();
     build.define("EXPOSE_GAME_STATE", None);
-    build.include("../..");
     // Match upstream, which compiles its C with -Wall but not -Wextra.
     build.extra_warnings(false);
     for source in sources {
@@ -14,5 +22,9 @@ fn main() {
     for header in headers {
         println!("cargo:rerun-if-changed={header}");
     }
-    build.compile("net");
+    build.compile("common");
+
+    if !cfg!(windows) {
+        println!("cargo:rustc-link-lib=m");
+    }
 }

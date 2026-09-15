@@ -1,9 +1,9 @@
 //! The side menu: the tabs beside the board, separated from it by a
 //! divider.
 
-use crate::ffi::Preset;
 use crate::render::{CursorStyle, LockStyle, Styles};
 use common::canvas::{Canvas, Coord, Mark, Rect, Size, Weight, draw_line, draw_rect_outline};
+use common::ffi::Preset;
 
 /// The menu's tabs, listed top to bottom.
 pub(crate) struct Menu {

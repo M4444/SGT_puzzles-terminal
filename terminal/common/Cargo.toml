@@ -3,5 +3,9 @@ name = "common"
 version = "0.1.0"
 edition = "2024"
 
+[build-dependencies]
+cc = "1"
+
 [dependencies]
 crossterm = "0.29.0"
+rand = "0.10.2"
