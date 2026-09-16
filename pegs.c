@@ -1158,6 +1158,17 @@ static void draw_tile(drawing *dr, game_drawstate *ds,
     draw_update(dr, x, y, TILESIZE, TILESIZE);
 }
 
+#ifdef EXPOSE_GAME_STATE
+/*
+ * What Pegs hands to a front end asking for the game data itself,
+ * through the drawing API's emit_state().
+ */
+struct live_state {
+    const unsigned char *grid;
+    int width, height;
+};
+#endif
+
 static void game_redraw(drawing *dr, game_drawstate *ds,
                         const game_state *oldstate, const game_state *state,
                         int dir, const game_ui *ui,
@@ -1166,6 +1177,18 @@ static void game_redraw(drawing *dr, game_drawstate *ds,
     int w = state->w, h = state->h;
     int x, y;
     int bgcolour;
+
+#ifdef EXPOSE_GAME_STATE
+    {
+        struct live_state data = {
+            .grid = state->grid,
+            .width = w,
+            .height = h,
+        };
+
+        dr->api->emit_state(dr, &data);
+    }
+#endif
 
     if (flashtime > 0) {
         int frame = (int)(flashtime / FLASH_FRAME);
