@@ -13,7 +13,7 @@ fn main() {
     let session = pegs::new_session();
     let tiles = &session.puzzle().tiles;
 
-    let board = Board::new((tiles[0].len(), tiles.len()));
+    let board = Board::new((tiles[0].len(), tiles.len()), session.wants_status_bar());
     let mut canvas = Canvas::new(board.rect(), Size::new(0, 0));
 
     draw_irregular_grid_outline(&mut canvas, tiles, |&tile| tile != Tile::Obstacle);

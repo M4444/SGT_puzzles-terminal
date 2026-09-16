@@ -18,6 +18,7 @@ use std::borrow::Cow;
 
 pub(crate) fn render_game(
     puzzle: &NetPuzzle,
+    wants_status_bar: bool,
     menu_state: MenuState,
     menu: &mut Menu,
     terminal_columns: usize,
@@ -25,7 +26,7 @@ pub(crate) fn render_game(
     let puzzle = puzzle_relative_to_origin(puzzle);
     let dimensions = puzzle.dimensions;
 
-    let board = Board::new(dimensions);
+    let board = Board::new(dimensions, wants_status_bar);
     let board_rect = board.rect();
     let mut canvas = Canvas::new(board_rect, menu.size());
 
@@ -39,7 +40,9 @@ pub(crate) fn render_game(
     if !menu.has_focus() {
         draw_frame(&mut canvas, board.frame);
     }
-    draw_status_bar(&mut canvas, board.status_bar_start, &puzzle.status);
+    if let Some(start) = board.status_bar_start {
+        draw_status_bar(&mut canvas, start, &puzzle.status);
+    }
 
     menu.set_placement(board_rect, terminal_columns);
     menu.draw(&mut canvas, menu_state);
@@ -357,7 +360,7 @@ mod tests {
     /// A canvas sized for the board and its menu. These tests only need
     /// the space the menu takes up, so it is built without presets.
     fn canvas(dimensions: GridDimensions) -> Canvas {
-        Canvas::new(Board::new(dimensions).rect(), Menu::new(&[]).size())
+        Canvas::new(Board::new(dimensions, true).rect(), Menu::new(&[]).size())
     }
 
     #[test]
@@ -365,7 +368,7 @@ mod tests {
         for _ in 0..100 {
             let session = crate::net::new_session();
             let puzzle = session.puzzle();
-            render_game(puzzle, MenuState::default(), &mut Menu::new(&[]), usize::MAX);
+            render_game(puzzle, true, MenuState::default(), &mut Menu::new(&[]), usize::MAX);
         }
     }
 
@@ -416,7 +419,7 @@ mod tests {
         // Menu Controls' header, opened so a legend is drawn too.
         menu.click((3, 6));
 
-        let board_rect = Board::new((5, 5)).rect();
+        let board_rect = Board::new((5, 5), true).rect();
         let mut canvas = Canvas::new(board_rect, menu.size());
         menu.set_placement(board_rect, usize::MAX);
         menu.draw(&mut canvas, MenuState::default());
@@ -437,7 +440,7 @@ mod tests {
     #[test]
     fn headers_stop_at_the_terminal_edge() {
         let mut menu = Menu::new(&[]);
-        let board_rect = Board::new((5, 5)).rect();
+        let board_rect = Board::new((5, 5), true).rect();
         let mut canvas = Canvas::new(board_rect, menu.size());
 
         // Type's header would run to column 84 in a terminal wide
@@ -457,7 +460,7 @@ mod tests {
         let puzzle = session.puzzle();
         let dim = SetAttribute(Attribute::Dim).to_string();
         let mut menu = Menu::new(&[]);
-        let mut render = |menu_state| render_game(puzzle, menu_state, &mut menu, usize::MAX);
+        let mut render = |menu_state| render_game(puzzle, true, menu_state, &mut menu, usize::MAX);
 
         let fresh = MenuState { can_undo: false, can_redo: false, ..MenuState::default() };
         let mid_game = MenuState { can_undo: true, can_redo: true, ..MenuState::default() };

@@ -75,6 +75,7 @@ unsafe extern "C" {
         device_pixel_ratio: c_double,
     );
     fn midend_tilesize(me: *mut RawMidend) -> c_int;
+    fn midend_wants_statusbar(me: *mut RawMidend) -> bool;
     fn midend_get_presets(me: *mut RawMidend, id_limit: *mut c_int) -> *const RawPresetMenu;
     fn midend_which_preset(me: *mut RawMidend) -> c_int;
     fn midend_set_params(me: *mut RawMidend, params: *mut RawGameParams);
@@ -144,6 +145,11 @@ impl Midend {
     /// tile position into the pixel coordinates `process_click` expects.
     pub fn tilesize(&self) -> c_int {
         unsafe { midend_tilesize(self.raw.as_ptr()) }
+    }
+
+    /// Whether the game has a status bar.
+    pub fn wants_status_bar(&self) -> bool {
+        unsafe { midend_wants_statusbar(self.raw.as_ptr()) }
     }
 
     /// Generates a fresh puzzle at whatever the current params are

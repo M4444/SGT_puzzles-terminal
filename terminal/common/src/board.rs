@@ -222,15 +222,16 @@ pub fn bottom_border_middle(tile: TileCoord) -> impl Iterator<Item = Coord> {
 }
 
 /// The board consists of the frame enclosing the grid and the status
-/// bar on the row beneath it.
+/// bar on the row beneath it, for a game that wants one.
 #[derive(Clone, Copy)]
 pub struct Board {
     pub frame: Rect,
-    pub status_bar_start: Coord,
+    /// Where the status bar starts, or `None` for a game without one.
+    pub status_bar_start: Option<Coord>,
 }
 
 impl Board {
-    pub fn new((width, height): GridDimensions) -> Board {
+    pub fn new((width, height): GridDimensions, wants_status_bar: bool) -> Board {
         assert!(width > 0 && height > 0, "Board::new() called with a zero-tile board");
 
         let grid = Rect::from_corners(top_left((0, 0)), bottom_right((width - 1, height - 1)));
@@ -241,16 +242,18 @@ impl Board {
             Coord::new(grid.left() - FRAME_MARGIN_X - 1, grid.top() - FRAME_MARGIN_Y - 1),
             Coord::new(grid.right() + FRAME_MARGIN_X + 1, grid.bottom() + FRAME_MARGIN_Y + 1),
         );
-        let status_bar_start = Coord::new(frame.left(), frame.bottom() + 1);
+        let status_bar_start =
+            wants_status_bar.then(|| Coord::new(frame.left(), frame.bottom() + 1));
 
         Board { frame, status_bar_start }
     }
 
     /// The whole board, from the frame's top left to the end of the
-    /// status bar's row.
+    /// status bar's row, or to the frame's bottom right without one.
     pub fn rect(self) -> Rect {
         let top_left = Coord::new(self.frame.left(), self.frame.top());
-        let bottom_right = Coord::new(self.frame.right(), self.status_bar_start.y);
+        let bottom = self.status_bar_start.map_or(self.frame.bottom(), |start| start.y);
+        let bottom_right = Coord::new(self.frame.right(), bottom);
         Rect::from_corners(top_left, bottom_right)
     }
 }
@@ -347,7 +350,19 @@ mod tests {
     #[test]
     #[should_panic(expected = "Board::new() called with a zero-tile board")]
     fn board_new_panics_on_zero_tile_board() {
-        Board::new((0, 0));
+        Board::new((0, 0), true);
+    }
+
+    /// A board with a status bar ends on the status bar's row, one below
+    /// the frame. A board without one ends on the frame.
+    #[test]
+    fn board_rect_ends_on_the_status_bar_only_when_there_is_one() {
+        let with_status_bar = Board::new((2, 2), true);
+        let without_status_bar = Board::new((2, 2), false);
+
+        assert_eq!(with_status_bar.rect().bottom(), with_status_bar.frame.bottom() + 1);
+        assert_eq!(without_status_bar.rect().bottom(), without_status_bar.frame.bottom());
+        assert!(without_status_bar.status_bar_start.is_none());
     }
 
     /// An L of three tiles on the board in a 2x2 grid. The border the two
@@ -356,7 +371,7 @@ mod tests {
     #[test]
     fn draw_irregular_grid_outline_skips_borders_between_tiles() {
         let grid = vec![vec![true, true], vec![true, false]];
-        let mut canvas = Canvas::new(Board::new((2, 2)).rect(), Size::new(0, 0));
+        let mut canvas = Canvas::new(Board::new((2, 2), false).rect(), Size::new(0, 0));
 
         draw_irregular_grid_outline(&mut canvas, &grid, |&is_on_board| is_on_board);
 

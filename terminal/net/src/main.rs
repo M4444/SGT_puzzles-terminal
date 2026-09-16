@@ -42,7 +42,13 @@ fn main() {
             can_undo: session.can_undo(),
             can_redo: session.can_redo(),
         };
-        let output = render::render_game(session.puzzle(), menu_state, &mut menu, columns.into());
+        let output = render::render_game(
+            session.puzzle(),
+            session.wants_status_bar(),
+            menu_state,
+            &mut menu,
+            columns.into(),
+        );
 
         // Anything past the last row would scroll the top away.
         let output: Vec<&str> = output.lines().take(rows.into()).collect();

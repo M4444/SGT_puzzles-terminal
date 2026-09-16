@@ -91,6 +91,10 @@ impl<P> Session<P> {
         self.midend.redraw();
     }
 
+    pub fn wants_status_bar(&self) -> bool {
+        self.midend.wants_status_bar()
+    }
+
     /// The tile size the mid-end settled on, which a game needs to turn
     /// a tile into the pixel coordinates `process_click` expects.
     pub fn tilesize(&self) -> c_int {
