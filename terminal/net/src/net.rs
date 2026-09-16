@@ -3,7 +3,7 @@
 use crate::ffi::window_offset;
 use crate::menu::{LegendEntry, LegendGroup};
 use common::board::{Grid, GridDimensions, TileCoord};
-use common::ffi::{RawDrawing, RawDrawingApi, RawGame, RawGameState};
+use common::ffi::{RawDrawing, RawDrawingApi, RawGame};
 use common::session::{Frontend, Session};
 use std::ffi::{CStr, c_char, c_int};
 
@@ -96,13 +96,10 @@ pub(crate) struct NetPuzzle {
     pub status: String,
 }
 
-/// Called from net.c's `game_redraw`, through our own `drawing_api`
-/// (`terminal_drawing_api`), with the same `state`/`active` that
-/// `compute_active` just produced.
-#[unsafe(no_mangle)]
-extern "C" fn rust_emit_state(
-    dr: *mut RawDrawing,
-    _state: *const RawGameState,
+/// Mirrors `struct live_state` (net.c), what Net hands over through the
+/// drawing API's `emit_state`.
+#[repr(C)]
+struct RawLiveState {
     active: *const u8,
     tiles: *const u8,
     barriers: *const u8,
@@ -115,14 +112,21 @@ extern "C" fn rust_emit_state(
     source_y: c_int,
     org_x: c_int,
     org_y: c_int,
-) {
-    let width = width as usize;
-    let height = height as usize;
+}
+
+/// Called from net.c's `game_redraw`, through our own `drawing_api`
+/// (`terminal_drawing_api`), with the tiles and the `active` map
+/// `compute_active` just produced.
+#[unsafe(no_mangle)]
+extern "C" fn rust_emit_state(dr: *mut RawDrawing, data: *const RawLiveState) {
+    let data = unsafe { &*data };
+    let width = data.width as usize;
+    let height = data.height as usize;
     let frontend = unsafe { &mut *((*dr).handle as *mut Frontend<NetPuzzle>) };
 
-    let raw_active = unsafe { std::slice::from_raw_parts(active, width * height) };
-    let raw_tiles = unsafe { std::slice::from_raw_parts(tiles, width * height) };
-    let raw_barriers = unsafe { std::slice::from_raw_parts(barriers, width * height) };
+    let raw_active = unsafe { std::slice::from_raw_parts(data.active, width * height) };
+    let raw_tiles = unsafe { std::slice::from_raw_parts(data.tiles, width * height) };
+    let raw_barriers = unsafe { std::slice::from_raw_parts(data.barriers, width * height) };
 
     let tiles: Vec<Tile> = raw_tiles
         .iter()
@@ -139,9 +143,12 @@ extern "C" fn rust_emit_state(
     frontend.puzzle = Some(NetPuzzle {
         dimensions: (width, height),
         tiles: tiles.chunks(width).map(|row| row.to_vec()).collect(),
-        cursor: Cursor { position: (cur_x as usize, cur_y as usize), visible: cur_visible },
-        source: (source_x as usize, source_y as usize),
-        origin: (org_x as usize, org_y as usize),
+        cursor: Cursor {
+            position: (data.cur_x as usize, data.cur_y as usize),
+            visible: data.cur_visible,
+        },
+        source: (data.source_x as usize, data.source_y as usize),
+        origin: (data.org_x as usize, data.org_y as usize),
         status: String::new(),
     });
 }

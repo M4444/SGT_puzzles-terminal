@@ -15,11 +15,6 @@ pub struct RawGame {
 }
 
 #[repr(C)]
-pub struct RawGameState {
-    _private: [u8; 0],
-}
-
-#[repr(C)]
 pub struct RawDrawingApi {
     _private: [u8; 0],
 }

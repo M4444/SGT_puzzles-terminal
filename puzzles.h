@@ -832,15 +832,10 @@ struct drawing_api {
     /*
      * The rest of this API only conveys drawing primitives, not the
      * underlying game data. This field is a direct accessor for front
-     * ends that need the data itself.
+     * ends that need the data itself. Since every game's state has a
+     * shape of its own, data points at a struct the game defines.
      */
-    void (*emit_state)(drawing *dr, const game_state *state,
-		       const unsigned char *active, const unsigned char *tiles,
-		       const unsigned char *barriers,
-		       int width, int height,
-		       int cur_x, int cur_y, bool cur_visible,
-		       int source_x, int source_y,
-		       int org_x, int org_y);
+    void (*emit_state)(drawing *dr, const void *data);
 #endif
 };
 

@@ -2911,6 +2911,23 @@ static void draw_tile(drawing *dr, game_drawstate *ds, int x, int y,
     draw_update(dr, clipx, clipy, clipw, cliph);
 }
 
+#ifdef EXPOSE_GAME_STATE
+/*
+ * What Net hands to a front end asking for the game data itself,
+ * through the drawing API's emit_state().
+ */
+struct live_state {
+    const unsigned char *active;
+    const unsigned char *tiles;
+    const unsigned char *barriers;
+    int width, height;
+    int cur_x, cur_y;
+    bool cur_visible;
+    int source_x, source_y;
+    int org_x, org_y;
+};
+#endif
+
 static void game_redraw(drawing *dr, game_drawstate *ds,
                         const game_state *oldstate, const game_state *state,
                         int dir, const game_ui *ui,
@@ -2953,12 +2970,24 @@ static void game_redraw(drawing *dr, game_drawstate *ds,
     active = compute_active(state, ui->cx, ui->cy);
     loops = compute_loops(state, ui->unlocked_loops);
 #ifdef EXPOSE_GAME_STATE
-    dr->api->emit_state(dr, state, active, state->tiles,
-                        state->imm->barriers,
-                        state->width, state->height,
-                        ui->cur_x, ui->cur_y, ui->cur_visible,
-                        ui->cx, ui->cy,
-                        ui->org_x, ui->org_y);
+    {
+        struct live_state data = {
+            .active = active,
+            .tiles = state->tiles,
+            .barriers = state->imm->barriers,
+            .width = state->width,
+            .height = state->height,
+            .cur_x = ui->cur_x,
+            .cur_y = ui->cur_y,
+            .cur_visible = ui->cur_visible,
+            .source_x = ui->cx,
+            .source_y = ui->cy,
+            .org_x = ui->org_x,
+            .org_y = ui->org_y,
+        };
+
+        dr->api->emit_state(dr, &data);
+    }
 #endif
 
     for (dy = -1; dy < ds->height+1; dy++) {
