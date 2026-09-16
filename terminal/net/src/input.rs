@@ -5,31 +5,13 @@ use crate::menu;
 use crate::net::{self, NetPuzzle};
 use crate::render;
 use common::board::{TileCoord, tiles_at};
-use common::session::Session;
-use crossterm::event::{
-    Event, KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind,
+use common::input::{
+    LEFT_BUTTON, MIDDLE_BUTTON, RIGHT_BUTTON, UI_NEWGAME, UI_QUIT, UI_REDO, UI_SOLVE, UI_UNDO,
+    key_code,
 };
-
-/// Raw key codes from puzzles.h's enum.
-const CURSOR_UP: i32 = 0x0209;
-const CURSOR_DOWN: i32 = 0x020A;
-const CURSOR_LEFT: i32 = 0x020B;
-const CURSOR_RIGHT: i32 = 0x020C;
-const CURSOR_SELECT: i32 = 0x020D;
-const MOD_CTRL: i32 = 0x1000;
-const MOD_SHFT: i32 = 0x2000;
-
-/// Key codes for the menu's actions. Restart has none of its own.
-const UI_QUIT: i32 = 0x0210;
-const UI_NEWGAME: i32 = 0x0211;
-const UI_SOLVE: i32 = 0x0212;
-const UI_UNDO: i32 = 0x0213;
-const UI_REDO: i32 = 0x0214;
-
-/// Raw mouse button codes from puzzles.h's enum.
-const LEFT_BUTTON: i32 = 0x0200;
-const MIDDLE_BUTTON: i32 = 0x0201;
-const RIGHT_BUTTON: i32 = 0x0202;
+use common::session::Session;
+use crossterm::event::{Event, KeyCode, KeyEvent, MouseButton, MouseEvent, MouseEventKind};
+use std::ffi::c_int;
 
 /// Takes one key press or mouse event and ignores any other kind.
 /// Returns `false` if it signalled quit.
@@ -83,24 +65,10 @@ fn take_key(
                 }
             } else {
                 // The board has focus.
-                let mut button = match key.code {
-                    KeyCode::Char(c) => c as i32,
-                    KeyCode::Up => CURSOR_UP,
-                    KeyCode::Down => CURSOR_DOWN,
-                    KeyCode::Left => CURSOR_LEFT,
-                    KeyCode::Right => CURSOR_RIGHT,
-                    KeyCode::Enter => CURSOR_SELECT,
-                    _ => return true,
-                };
-
-                if key.modifiers.contains(KeyModifiers::CONTROL) {
-                    button |= MOD_CTRL;
+                match key_code(key) {
+                    Some(button) => session.process_key(button),
+                    None => true,
                 }
-                if key.modifiers.contains(KeyModifiers::SHIFT) {
-                    button |= MOD_SHFT;
-                }
-
-                session.process_key(button)
             }
         }
     }
@@ -175,7 +143,7 @@ fn take_action(
 /// tile can never be rotated.
 fn resolve_tile(
     possible_tiles: &[TileCoord],
-    button: i32,
+    button: c_int,
     session: &Session<NetPuzzle>,
 ) -> Option<TileCoord> {
     if let [only] = possible_tiles {

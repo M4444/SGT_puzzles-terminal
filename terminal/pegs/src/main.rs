@@ -1,7 +1,8 @@
 mod pegs;
 mod render;
 
-use crossterm::event::{Event, KeyCode};
+use common::input::key_code;
+use crossterm::event::Event;
 
 fn main() {
     let mut session = pegs::new_session();
@@ -11,6 +12,12 @@ fn main() {
         |session, columns| {
             render::render_game(session.puzzle(), session.wants_status_bar(), columns)
         },
-        |_session, event| !matches!(event, Event::Key(key) if key.code == KeyCode::Char('q')),
+        |session, event| match event {
+            Event::Key(key) => match key_code(key) {
+                Some(button) => session.process_key(button),
+                None => true,
+            },
+            _ => true,
+        },
     );
 }
