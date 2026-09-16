@@ -1,6 +1,6 @@
 //! Generating and reading Pegs puzzles.
 
-use common::board::Grid;
+use common::board::{Grid, TileCoord};
 use common::ffi::{RawDrawing, RawDrawingApi, RawGame};
 use common::session::{Frontend, Session};
 use std::ffi::{c_char, c_int};
@@ -37,9 +37,19 @@ impl Tile {
     }
 }
 
+/// The keyboard cursor's position, whether it's shown and whether the
+/// peg on it has been picked up to jump.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct Cursor {
+    pub position: TileCoord,
+    pub visible: bool,
+    pub jumping: bool,
+}
+
 /// A Pegs puzzle.
 pub(crate) struct PegsPuzzle {
     pub tiles: Tiles,
+    pub cursor: Cursor,
 }
 
 /// Mirrors `struct live_state` (pegs.c), what Pegs hands over through
@@ -49,6 +59,10 @@ struct RawLiveState {
     grid: *const u8,
     width: c_int,
     height: c_int,
+    cur_x: c_int,
+    cur_y: c_int,
+    cur_visible: bool,
+    cur_jumping: bool,
 }
 
 /// Called from pegs.c's `game_redraw`, through the drawing API.
@@ -62,8 +76,14 @@ extern "C" fn rust_emit_state(dr: *mut RawDrawing, data: *const RawLiveState) {
     let grid = unsafe { std::slice::from_raw_parts(data.grid, width * height) };
     let tiles: Vec<Tile> = grid.iter().map(|&value| Tile::from_value(value)).collect();
 
-    frontend.puzzle =
-        Some(PegsPuzzle { tiles: tiles.chunks(width).map(|row| row.to_vec()).collect() });
+    frontend.puzzle = Some(PegsPuzzle {
+        tiles: tiles.chunks(width).map(|row| row.to_vec()).collect(),
+        cursor: Cursor {
+            position: (data.cur_x as usize, data.cur_y as usize),
+            visible: data.cur_visible,
+            jumping: data.cur_jumping,
+        },
+    });
 }
 
 /// Pegs has no status bar, so the mid-end never asks for one. The

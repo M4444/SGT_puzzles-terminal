@@ -1166,6 +1166,8 @@ static void draw_tile(drawing *dr, game_drawstate *ds,
 struct live_state {
     const unsigned char *grid;
     int width, height;
+    int cur_x, cur_y;
+    bool cur_visible, cur_jumping;
 };
 #endif
 
@@ -1184,6 +1186,10 @@ static void game_redraw(drawing *dr, game_drawstate *ds,
             .grid = state->grid,
             .width = w,
             .height = h,
+            .cur_x = ui->cur_x,
+            .cur_y = ui->cur_y,
+            .cur_visible = ui->cur_visible,
+            .cur_jumping = ui->cur_jumping,
         };
 
         dr->api->emit_state(dr, &data);
