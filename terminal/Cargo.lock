@@ -231,6 +231,7 @@ version = "0.1.0"
 dependencies = [
  "cc",
  "common",
+ "crossterm",
 ]
 
 [[package]]
