@@ -1,9 +1,10 @@
-//! Generating and reading Net puzzles.
+//! Generating and reading Net puzzles, with the menu tabs Net offers.
 
 use crate::ffi::window_offset;
-use crate::menu::{LegendEntry, LegendGroup};
+use crate::menu::{self, Action, BodySpec, ButtonSpec, LegendEntry, LegendGroup, TabSpec};
+use crate::render::{CursorStyle, LockStyle, Styles};
 use common::board::{Grid, GridDimensions, TileCoord};
-use common::ffi::{RawDrawing, RawDrawingApi, RawGame};
+use common::ffi::{Preset, RawDrawing, RawDrawingApi, RawGame};
 use common::session::{Frontend, Session};
 use std::ffi::{CStr, c_char, c_int};
 
@@ -183,10 +184,55 @@ const KEYBOARD_CONTROLS: &[LegendEntry] = &[
     LegendEntry { input: "J", description: "jumble unlocked tiles" },
 ];
 
-pub(crate) const GAME_CONTROLS: &[LegendGroup] = &[
+const GAME_CONTROLS: &[LegendGroup] = &[
     LegendGroup { label: Some("Mouse:"), entries: MOUSE_CONTROLS },
     LegendGroup { label: Some("Keyboard:"), entries: KEYBOARD_CONTROLS },
 ];
+
+/// The choices only Net's menu offers.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum NetAction {
+    SetCursorStyle(CursorStyle),
+    SetLockStyle(LockStyle),
+}
+
+/// Net's menu tabs, the usual ones with its two style tabs among them.
+pub(crate) fn tab_specs(presets: &[Preset]) -> Vec<TabSpec<NetAction>> {
+    let styles = vec![
+        TabSpec { name: Some("Cursor Style"), body: BodySpec::Choices(cursor_styles()) },
+        TabSpec { name: Some("Lock Style"), body: BodySpec::Choices(lock_styles()) },
+    ];
+
+    menu::tabs(presets, styles, GAME_CONTROLS)
+}
+
+fn cursor_styles() -> Vec<ButtonSpec<NetAction>> {
+    let choice = |style| Action::Game(NetAction::SetCursorStyle(style));
+
+    vec![
+        ButtonSpec::new(choice(CursorStyle::Outline), "Outline"),
+        ButtonSpec::new(choice(CursorStyle::ReverseTileCenter), "Center"),
+        ButtonSpec::new(choice(CursorStyle::ReverseTileFull), "Full"),
+    ]
+}
+
+fn lock_styles() -> Vec<ButtonSpec<NetAction>> {
+    let choice = |style| Action::Game(NetAction::SetLockStyle(style));
+
+    vec![
+        ButtonSpec::new(choice(LockStyle::ReverseTileConnected), "Merged"),
+        ButtonSpec::new(choice(LockStyle::ReverseTileCenter), "Center"),
+        ButtonSpec::new(choice(LockStyle::ReverseTileFull), "Full"),
+    ]
+}
+
+/// Whether the board is already drawn with the style a choice sets.
+pub(crate) fn is_current(action: NetAction, styles: Styles) -> bool {
+    match action {
+        NetAction::SetCursorStyle(style) => style == styles.cursor,
+        NetAction::SetLockStyle(style) => style == styles.lock,
+    }
+}
 
 /// Starts a game of Net.
 pub(crate) fn new_session() -> Session<NetPuzzle> {

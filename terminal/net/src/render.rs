@@ -6,7 +6,7 @@
 //! result to text.
 
 use crate::menu::{Menu, MenuState};
-use crate::net::{Cursor, NetPuzzle, Tiles};
+use crate::net::{self, Cursor, NetAction, NetPuzzle, Tiles};
 use common::board::{
     Board, GridDimensions, TileCoord, bottom_border_middle, bottom_left, bottom_mid, bottom_right,
     center_left, center_mid, center_right, draw_frame, draw_grid_lines, draw_status_bar, left_side,
@@ -19,8 +19,9 @@ use std::borrow::Cow;
 pub(crate) fn render_game(
     puzzle: &NetPuzzle,
     wants_status_bar: bool,
+    styles: Styles,
     menu_state: MenuState,
-    menu: &mut Menu,
+    menu: &mut Menu<NetAction>,
     terminal_columns: usize,
 ) -> String {
     let puzzle = puzzle_relative_to_origin(puzzle);
@@ -34,8 +35,8 @@ pub(crate) fn render_game(
     draw_wires_and_endpoints(&mut canvas, &puzzle.tiles);
     draw_source(&mut canvas, puzzle.source);
     draw_barriers(&mut canvas, &puzzle.tiles);
-    draw_locked(&mut canvas, &puzzle.tiles, menu_state.styles.lock);
-    draw_cursor(&mut canvas, puzzle.cursor, menu_state.styles.cursor);
+    draw_locked(&mut canvas, &puzzle.tiles, styles.lock);
+    draw_cursor(&mut canvas, puzzle.cursor, styles.cursor);
     // The frame is what marks the board as focused.
     if !menu.has_focus() {
         draw_frame(&mut canvas, board.frame);
@@ -45,7 +46,7 @@ pub(crate) fn render_game(
     }
 
     menu.set_placement(board_rect, terminal_columns);
-    menu.draw(&mut canvas, menu_state);
+    menu.draw(&mut canvas, menu_state, |action| net::is_current(action, styles));
 
     flatten_to_lines(&canvas, terminal_columns).join("\n")
 }
@@ -360,7 +361,7 @@ mod tests {
     /// A canvas sized for the board and its menu. These tests only need
     /// the space the menu takes up, so it is built without presets.
     fn canvas(dimensions: GridDimensions) -> Canvas {
-        Canvas::new(Board::new(dimensions, true).rect(), Menu::new(&[]).size())
+        Canvas::new(Board::new(dimensions, true).rect(), Menu::new(net::tab_specs(&[])).size())
     }
 
     #[test]
@@ -368,7 +369,14 @@ mod tests {
         for _ in 0..100 {
             let session = crate::net::new_session();
             let puzzle = session.puzzle();
-            render_game(puzzle, true, MenuState::default(), &mut Menu::new(&[]), usize::MAX);
+            render_game(
+                puzzle,
+                true,
+                Styles::default(),
+                MenuState::default(),
+                &mut Menu::new(net::tab_specs(&[])),
+                usize::MAX,
+            );
         }
     }
 
@@ -415,14 +423,16 @@ mod tests {
     /// start at 28.
     #[test]
     fn menu_draws_where_it_is_placed() {
-        let mut menu = Menu::new(&[]);
+        let mut menu = Menu::new(net::tab_specs(&[]));
         // Menu Controls' header, opened so a legend is drawn too.
         menu.click((3, 6));
 
         let board_rect = Board::new((5, 5), true).rect();
         let mut canvas = Canvas::new(board_rect, menu.size());
         menu.set_placement(board_rect, usize::MAX);
-        menu.draw(&mut canvas, MenuState::default());
+        menu.draw(&mut canvas, MenuState::default(), |action| {
+            net::is_current(action, Styles::default())
+        });
 
         // The divider, ending on the board's last row, then the first
         // button's corner, Cursor Style's header line and the legend's
@@ -439,14 +449,16 @@ mod tests {
     /// menu runs past it.
     #[test]
     fn headers_stop_at_the_terminal_edge() {
-        let mut menu = Menu::new(&[]);
+        let mut menu = Menu::new(net::tab_specs(&[]));
         let board_rect = Board::new((5, 5), true).rect();
         let mut canvas = Canvas::new(board_rect, menu.size());
 
         // Type's header would run to column 84 in a terminal wide
         // enough, but this one is 60 columns wide.
         menu.set_placement(board_rect, 60);
-        menu.draw(&mut canvas, MenuState::default());
+        menu.draw(&mut canvas, MenuState::default(), |action| {
+            net::is_current(action, Styles::default())
+        });
 
         assert_eq!(canvas.char_at((59, 3)), '▼');
         assert_eq!(canvas.char_at((60, 3)), ' ');
@@ -459,8 +471,10 @@ mod tests {
         let session = crate::net::new_session();
         let puzzle = session.puzzle();
         let dim = SetAttribute(Attribute::Dim).to_string();
-        let mut menu = Menu::new(&[]);
-        let mut render = |menu_state| render_game(puzzle, true, menu_state, &mut menu, usize::MAX);
+        let mut menu = Menu::new(net::tab_specs(&[]));
+        let mut render = |menu_state| {
+            render_game(puzzle, true, Styles::default(), menu_state, &mut menu, usize::MAX)
+        };
 
         let fresh = MenuState { can_undo: false, can_redo: false, ..MenuState::default() };
         let mid_game = MenuState { can_undo: true, can_redo: true, ..MenuState::default() };

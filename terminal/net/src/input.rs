@@ -17,7 +17,7 @@ use std::ffi::c_int;
 /// Returns `false` if it signalled quit.
 pub(crate) fn take_event(
     event: Event,
-    menu: &mut menu::Menu,
+    menu: &mut menu::Menu<net::NetAction>,
     session: &mut Session<NetPuzzle>,
     styles: &mut render::Styles,
 ) -> bool {
@@ -33,7 +33,7 @@ pub(crate) fn take_event(
 /// it signalled quit.
 fn take_key(
     key: KeyEvent,
-    menu: &mut menu::Menu,
+    menu: &mut menu::Menu<net::NetAction>,
     session: &mut Session<NetPuzzle>,
     styles: &mut render::Styles,
 ) -> bool {
@@ -79,7 +79,7 @@ fn take_key(
 /// Returns `false` if it signalled quit.
 fn take_click(
     mouse: MouseEvent,
-    menu: &mut menu::Menu,
+    menu: &mut menu::Menu<net::NetAction>,
     session: &mut Session<NetPuzzle>,
     styles: &mut render::Styles,
 ) -> bool {
@@ -108,7 +108,7 @@ fn take_click(
 
 /// Carries out a menu action. Returns `false` if it signalled quit.
 fn take_action(
-    action: menu::Action,
+    action: menu::Action<net::NetAction>,
     session: &mut Session<NetPuzzle>,
     styles: &mut render::Styles,
 ) -> bool {
@@ -122,11 +122,11 @@ fn take_action(
             session.restart();
             true
         }
-        menu::Action::SetCursorStyle(style) => {
+        menu::Action::Game(net::NetAction::SetCursorStyle(style)) => {
             styles.cursor = style;
             true
         }
-        menu::Action::SetLockStyle(style) => {
+        menu::Action::Game(net::NetAction::SetLockStyle(style)) => {
             styles.lock = style;
             true
         }
