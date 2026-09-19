@@ -37,6 +37,14 @@ fn main() {
                 columns,
             )
         },
-        |game, event| input::take_event(event, &mut game.menu, &mut game.session, &mut game.styles),
+        |game, event| {
+            common::input::take_event(
+                event,
+                &mut game.menu,
+                &mut game.session,
+                |action| input::take_action(action, &mut game.styles),
+                input::click_board,
+            )
+        },
     );
 }
