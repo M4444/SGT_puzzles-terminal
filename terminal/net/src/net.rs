@@ -1,10 +1,10 @@
 //! Generating and reading Net puzzles, with the menu tabs Net offers.
 
 use crate::ffi::window_offset;
-use crate::menu::{self, Action, BodySpec, ButtonSpec, LegendEntry, LegendGroup, TabSpec};
 use crate::render::{CursorStyle, LockStyle, Styles};
 use common::board::{Grid, GridDimensions, TileCoord};
 use common::ffi::{Preset, RawDrawing, RawDrawingApi, RawGame};
+use common::menu::{self, Action, BodySpec, ButtonSpec, LegendEntry, LegendGroup, TabSpec};
 use common::session::{Frontend, Session};
 use std::ffi::{CStr, c_char, c_int};
 

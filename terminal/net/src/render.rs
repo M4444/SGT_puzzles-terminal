@@ -5,7 +5,6 @@
 //! cursor, frame, status bar), adds the side menu, then flattens the
 //! result to text.
 
-use crate::menu::{Menu, MenuState};
 use crate::net::{self, Cursor, NetAction, NetPuzzle, Tiles};
 use common::board::{
     Board, GridDimensions, TileCoord, bottom_border_middle, bottom_left, bottom_mid, bottom_right,
@@ -14,6 +13,7 @@ use common::board::{
     top_mid, top_right,
 };
 use common::canvas::{Canvas, Mark, Weight, draw_line, draw_rect_outline, flatten_to_lines};
+use common::menu::{Menu, MenuState};
 use std::borrow::Cow;
 
 pub(crate) fn render_game(

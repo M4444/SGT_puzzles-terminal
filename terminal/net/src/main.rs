@@ -1,9 +1,9 @@
 mod ffi;
 mod input;
-mod menu;
 mod net;
 mod render;
 
+use common::menu;
 use common::session::Session;
 use net::{NetAction, NetPuzzle};
 

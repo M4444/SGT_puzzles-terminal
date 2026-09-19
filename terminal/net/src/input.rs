@@ -1,7 +1,6 @@
 //! Turning key presses and mouse clicks into menu actions and the
 //! mid-end's key codes.
 
-use crate::menu;
 use crate::net::{self, NetPuzzle};
 use crate::render;
 use common::board::{TileCoord, tiles_at};
@@ -9,6 +8,7 @@ use common::input::{
     LEFT_BUTTON, MIDDLE_BUTTON, RIGHT_BUTTON, UI_NEWGAME, UI_QUIT, UI_REDO, UI_SOLVE, UI_UNDO,
     key_code,
 };
+use common::menu;
 use common::session::Session;
 use crossterm::event::{Event, KeyCode, KeyEvent, MouseButton, MouseEvent, MouseEventKind};
 use std::ffi::c_int;

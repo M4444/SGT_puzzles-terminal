@@ -1,12 +1,12 @@
 //! The side menu: the tabs beside the board, separated from it by a
 //! divider.
 
-use common::canvas::{Canvas, Coord, Mark, Rect, Size, Weight, draw_line, draw_rect_outline};
-use common::ffi::Preset;
+use crate::canvas::{Canvas, Coord, Mark, Rect, Size, Weight, draw_line, draw_rect_outline};
+use crate::ffi::Preset;
 
 /// The menu's tabs, listed top to bottom, with `G` standing for the
 /// game's own action type.
-pub(crate) struct Menu<G> {
+pub struct Menu<G> {
     tabs: Vec<Tab<G>>,
     size: Size,
     /// Where the menu sits on screen. Its headers, buttons and legends
@@ -32,7 +32,7 @@ enum Focus {
 impl<G: Copy> Menu<G> {
     /// Builds the menu with every named tab closed, drawn at the top left
     /// of the screen until `set_placement` says where it goes.
-    pub(crate) fn new(tab_specs: Vec<TabSpec<G>>) -> Menu<G> {
+    pub fn new(tab_specs: Vec<TabSpec<G>>) -> Menu<G> {
         let tabs = tab_specs
             .into_iter()
             .map(|spec| Tab { spec, open: false, cursor: 0, header: None, body: None })
@@ -76,7 +76,7 @@ impl<G: Copy> Menu<G> {
     /// Sets the menu's position just right of the board, level with its
     /// top, with its divider running the board's full height and its
     /// headers stopping at the terminal's edge.
-    pub(crate) fn set_placement(&mut self, board_rect: Rect, terminal_columns: usize) {
+    pub fn set_placement(&mut self, board_rect: Rect, terminal_columns: usize) {
         self.top_left = Coord::new(board_rect.right() + 1, board_rect.top());
         self.divider_length = board_rect.bottom() - board_rect.top() + 1;
         self.terminal_columns = terminal_columns;
@@ -85,7 +85,7 @@ impl<G: Copy> Menu<G> {
     /// Draws the divider, then each tab's header and any body it's
     /// showing. A choice the game already uses is ticked. For the
     /// game's own actions, `is_game_action_current` decides that.
-    pub(crate) fn draw(
+    pub fn draw(
         &self,
         canvas: &mut Canvas,
         menu_state: MenuState,
@@ -119,7 +119,7 @@ impl<G: Copy> Menu<G> {
     /// Takes a click at a screen position. A header opens or closes its
     /// tab and returns no action. A button returns its own, dimmed or
     /// not, since the mid-end ignores an action it can't take.
-    pub(crate) fn click(&mut self, position: impl Into<Coord>) -> Option<Action<G>> {
+    pub fn click(&mut self, position: impl Into<Coord>) -> Option<Action<G>> {
         let position = position.into();
         // A click left of or above the menu can't land on it.
         let position = Coord::new(
@@ -148,17 +148,17 @@ impl<G: Copy> Menu<G> {
     }
 
     /// The space the menu adds beside the board.
-    pub(crate) fn size(&self) -> Size {
+    pub fn size(&self) -> Size {
         self.size
     }
 
     /// Whether focus is on the menu.
-    pub(crate) fn has_focus(&self) -> bool {
+    pub fn has_focus(&self) -> bool {
         self.focus.is_some()
     }
 
     /// Returns focus to the board.
-    pub(crate) fn clear_focus(&mut self) {
+    pub fn clear_focus(&mut self) {
         self.focus = None;
     }
 
@@ -174,7 +174,7 @@ impl<G: Copy> Menu<G> {
 
     /// Moves focus on to the next place, returning it to the board once
     /// it runs off the last one.
-    pub(crate) fn focus_next(&mut self) {
+    pub fn focus_next(&mut self) {
         self.focus = match self.focus {
             None => self.focus_order().next(),
             Some(current) => self.focus_order().skip_while(|focus| *focus != current).nth(1),
@@ -182,20 +182,20 @@ impl<G: Copy> Menu<G> {
     }
 
     /// The reverse of `focus_next`.
-    pub(crate) fn focus_previous(&mut self) {
+    pub fn focus_previous(&mut self) {
         self.focus = match self.focus {
             None => self.focus_order().next_back(),
             Some(current) => self.focus_order().rev().skip_while(|focus| *focus != current).nth(1),
         };
     }
 
-    pub(crate) fn cursor_left(&mut self) {
+    pub fn cursor_left(&mut self) {
         if let Some(Focus::Buttons(index)) = self.focus {
             self.tabs[index].cursor_previous();
         }
     }
 
-    pub(crate) fn cursor_right(&mut self) {
+    pub fn cursor_right(&mut self) {
         if let Some(Focus::Buttons(index)) = self.focus {
             self.tabs[index].cursor_next();
         }
@@ -204,7 +204,7 @@ impl<G: Copy> Menu<G> {
     /// Takes a press where the focus is. A header opens or closes its
     /// tab, as clicking it would, and returns no action. Buttons return
     /// the action of the one the cursor is on.
-    pub(crate) fn press(&mut self) -> Option<Action<G>> {
+    pub fn press(&mut self) -> Option<Action<G>> {
         match self.focus? {
             Focus::Header(index) => {
                 self.tabs[index].toggle_open();
@@ -218,14 +218,14 @@ impl<G: Copy> Menu<G> {
 
 /// A tab's name and body. A named tab draws a header and can be
 /// collapsed. An unnamed one is always just its body.
-pub(crate) struct TabSpec<G> {
+pub struct TabSpec<G> {
     pub name: Option<&'static str>,
     pub body: BodySpec<G>,
 }
 
 /// What a tab shows. Choices are buttons standing for one setting's
 /// options, so each carries a tick column showing which is in use.
-pub(crate) enum BodySpec<G> {
+pub enum BodySpec<G> {
     Buttons(Vec<ButtonSpec<G>>),
     Choices(Vec<ButtonSpec<G>>),
     Legend(&'static [LegendGroup]),
@@ -332,21 +332,21 @@ struct Legend {
     top_left: Coord,
 }
 
-pub(crate) struct LegendEntry {
-    pub(crate) input: &'static str,
-    pub(crate) description: &'static str,
+pub struct LegendEntry {
+    pub input: &'static str,
+    pub description: &'static str,
 }
 
 /// A group of legend rows, under an optional label.
-pub(crate) struct LegendGroup {
-    pub(crate) label: Option<&'static str>,
-    pub(crate) entries: &'static [LegendEntry],
+pub struct LegendGroup {
+    pub label: Option<&'static str>,
+    pub entries: &'static [LegendEntry],
 }
 
 /// What a button does. The `Game` variant carries an action only the
 /// game itself knows, like a choice of how its board is drawn.
 #[derive(Clone, Copy, Debug)]
-pub(crate) enum Action<G> {
+pub enum Action<G> {
     NewGame,
     Restart,
     Undo,
@@ -363,7 +363,7 @@ const TICK: char = '✓';
 /// What the menu shows of the game as it is right now: the preset the
 /// game is at and whether there is a move to undo or redo.
 #[derive(Clone, Copy, Debug, Default)]
-pub(crate) struct MenuState {
+pub struct MenuState {
     pub preset: Option<usize>,
     pub can_undo: bool,
     pub can_redo: bool,
@@ -383,13 +383,13 @@ fn is_current<G: Copy>(
 }
 
 #[derive(Clone, Debug)]
-pub(crate) struct ButtonSpec<G> {
+pub struct ButtonSpec<G> {
     action: Action<G>,
     label: String,
 }
 
 impl<G> ButtonSpec<G> {
-    pub(crate) fn new(action: Action<G>, label: &str) -> ButtonSpec<G> {
+    pub fn new(action: Action<G>, label: &str) -> ButtonSpec<G> {
         ButtonSpec { action, label: label.to_string() }
     }
 }
@@ -405,7 +405,7 @@ struct Button<G> {
 
 /// The tabs of a game's menu, top to bottom. A game's own settings
 /// tabs sit between the presets and the controls.
-pub(crate) fn tabs<G>(
+pub fn tabs<G>(
     presets: &[Preset],
     settings: Vec<TabSpec<G>>,
     game_controls: &'static [LegendGroup],
@@ -667,9 +667,31 @@ fn available<G>(action: Action<G>, menu_state: MenuState) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::net::NetAction;
 
-    /// The ten presets Net offers, in the order it lists them.
+    /// Stands in for the actions a game defines.
+    #[derive(Clone, Copy)]
+    enum GameAction {
+        First,
+        Second,
+    }
+
+    /// Stands in for the inputs a game lists in its legend.
+    const GAME_CONTROLS: &[LegendGroup] = &[LegendGroup {
+        label: Some("Keyboard:"),
+        entries: &[LegendEntry { input: "Arrows", description: "move cursor" }],
+    }];
+
+    /// Stands in for the settings tabs a game offers.
+    fn settings() -> Vec<TabSpec<GameAction>> {
+        let choices = vec![
+            ButtonSpec::new(Action::Game(GameAction::First), "First"),
+            ButtonSpec::new(Action::Game(GameAction::Second), "Second"),
+        ];
+
+        vec![TabSpec { name: Some("Choices"), body: BodySpec::Choices(choices) }]
+    }
+
+    /// Ten presets, the sizes a game might offer.
     fn presets() -> Vec<Preset> {
         let sizes = ["5x5", "7x7", "9x9", "11x11", "13x11"];
         let plain = sizes.iter().map(|size| size.to_string());
@@ -682,14 +704,14 @@ mod tests {
             .collect()
     }
 
-    /// A menu with Net's tabs, presets and all, every tab closed.
-    fn menu() -> Menu<NetAction> {
-        Menu::new(crate::net::tab_specs(&presets()))
+    /// A menu with a game's tabs, presets and all, every tab closed.
+    fn menu() -> Menu<GameAction> {
+        Menu::new(tabs(&presets(), settings(), GAME_CONTROLS))
     }
 
     /// The widest tab sets the width, open or not, so opening one
     /// never shifts the menu sideways. Type's ten presets take 143
-    /// columns in a single row, far past the legend's longest of 57.
+    /// columns in a single row, far past every other tab.
     #[test]
     fn menu_width_is_its_widest_tab_and_the_margin() {
         assert_eq!(menu().size().width, 146);
@@ -698,9 +720,9 @@ mod tests {
     /// A closed tab shows its header and nothing else.
     #[test]
     fn a_closed_tab_costs_only_its_header() {
-        // The button row's three, and a header each for the five
+        // The button row's three, and a header each for the four
         // named tabs.
-        assert_eq!(menu().size().height, 8);
+        assert_eq!(menu().size().height, 7);
     }
 
     /// Clicking a header returns no action and opens the tab, making room
@@ -708,18 +730,18 @@ mod tests {
     #[test]
     fn clicking_a_header_opens_the_tab() {
         let mut menu = menu();
-        // Cursor Style's header, two rows below the button row.
+        // The Choices tab's header, two rows below the button row.
         assert!(menu.click((3, 4)).is_none());
 
-        // Its buttons take one row of three, like any button body.
-        assert_eq!(menu.size().height, 8 + BUTTON_HEIGHT);
+        // Its buttons take one row, like any button body.
+        assert_eq!(menu.size().height, 7 + BUTTON_HEIGHT);
 
         assert!(menu.click((3, 4)).is_none());
-        assert_eq!(menu.size().height, 8);
+        assert_eq!(menu.size().height, 7);
     }
 
     fn unavailable_labels(menu_state: MenuState) -> Vec<String> {
-        common_actions::<NetAction>()
+        common_actions::<GameAction>()
             .into_iter()
             .filter(|spec| !available(spec.action, menu_state))
             .map(|spec| spec.label)
@@ -757,7 +779,7 @@ mod tests {
         // Left of the row, past its end, and below every tab.
         assert!(find(2, 0).is_none());
         assert!(find(59, 0).is_none());
-        assert!(find(3, 8).is_none());
+        assert!(find(3, 7).is_none());
     }
 
     /// Clicks arrive in screen coordinates, so a moved menu takes them
@@ -778,7 +800,7 @@ mod tests {
     fn focus_visits_every_header_and_row_of_buttons() {
         let mut menu = menu();
         let mut visited = Vec::new();
-        for _ in 0..7 {
+        for _ in 0..6 {
             menu.focus_next();
             visited.push(menu.focus);
         }
@@ -791,7 +813,6 @@ mod tests {
                 Some(Focus::Header(2)),
                 Some(Focus::Header(3)),
                 Some(Focus::Header(4)),
-                Some(Focus::Header(5)),
                 None,
             ]
         );
@@ -804,11 +825,11 @@ mod tests {
         let mut menu = menu();
         let closed = menu.focus_order().count();
 
-        // Menu Controls, the fourth header down.
-        menu.click((3, 6));
+        // Menu Controls, the third header down.
+        menu.click((3, 5));
         assert_eq!(menu.focus_order().count(), closed);
 
-        // Cursor Style, the second.
+        // Choices, the second.
         menu.click((3, 4));
         assert_eq!(menu.focus_order().count(), closed + 1);
     }
@@ -828,7 +849,7 @@ mod tests {
 
         menu.clear_focus();
         menu.focus_previous();
-        assert_eq!(menu.focus, Some(Focus::Header(5)));
+        assert_eq!(menu.focus, Some(Focus::Header(4)));
     }
 
     /// A press on a header opens or closes its tab and gives no
@@ -838,7 +859,7 @@ mod tests {
         let mut menu = menu();
         let closed_height = menu.size().height;
 
-        // Cursor Style's header, the third place the focus visits.
+        // The Choices tab's header, the third place the focus visits.
         menu.focus_next();
         menu.focus_next();
         menu.focus_next();
@@ -859,7 +880,7 @@ mod tests {
         let at_third = MenuState { preset: Some(3), ..MenuState::default() };
         let custom = MenuState { preset: None, ..MenuState::default() };
 
-        let ticked = |action, menu_state| is_current::<NetAction>(action, menu_state, |_| false);
+        let ticked = |action, menu_state| is_current::<GameAction>(action, menu_state, |_| false);
 
         assert!(ticked(Action::SetPreset(3), at_third));
         assert!(!ticked(Action::SetPreset(4), at_third));

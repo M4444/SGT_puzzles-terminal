@@ -4,5 +4,6 @@ pub mod board;
 pub mod canvas;
 pub mod ffi;
 pub mod input;
+pub mod menu;
 pub mod session;
 pub mod terminal;
