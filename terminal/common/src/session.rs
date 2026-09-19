@@ -4,24 +4,24 @@
 use crate::ffi::{self, Midend, Preset, RawDrawingApi, RawGame};
 use std::ffi::{c_int, c_void};
 
-/// The front end's state, recovered from `dr->handle` by every
-/// drawing-API callback. `P` is the game's own puzzle type, which its
-/// callbacks build.
-pub struct Frontend<P> {
+/// What `dr->handle` points at, recovered by every drawing-API
+/// callback. `P` is the game's own puzzle type, which its callbacks
+/// build.
+pub struct DrawHandle<P> {
     pub puzzle: Option<P>,
 }
 
-impl<P> Default for Frontend<P> {
-    fn default() -> Frontend<P> {
-        Frontend { puzzle: None }
+impl<P> Default for DrawHandle<P> {
+    fn default() -> DrawHandle<P> {
+        DrawHandle { puzzle: None }
     }
 }
 
-/// A session owns the mid-end and the front end state, for as long as
+/// A session owns the mid-end and the drawing handle, for as long as
 /// the game is played.
 pub struct Session<P> {
     midend: Midend,
-    frontend: Box<Frontend<P>>,
+    handle: Box<DrawHandle<P>>,
 }
 
 impl<P> Session<P> {
@@ -33,19 +33,19 @@ impl<P> Session<P> {
     /// Both pointers must stay valid for as long as the session lives,
     /// since the mid-end keeps them.
     pub unsafe fn new(game: *const RawGame, drapi: *const RawDrawingApi) -> Session<P> {
-        let mut frontend = Box::new(Frontend::default());
-        let frontend_ptr = &mut *frontend as *mut Frontend<P> as *mut c_void;
+        let mut handle = Box::new(DrawHandle::default());
+        let handle_ptr = &mut *handle as *mut DrawHandle<P> as *mut c_void;
 
-        let midend = unsafe { Midend::new(game, drapi, frontend_ptr) };
+        let midend = unsafe { Midend::new(game, drapi, handle_ptr) };
         midend.new_game();
         midend.redraw();
 
-        Session { midend, frontend }
+        Session { midend, handle }
     }
 
     /// The puzzle state as of the most recent `new()`/`process_key()`.
     pub fn puzzle(&self) -> &P {
-        self.frontend.puzzle.as_ref().expect("emit_state was not called")
+        self.handle.puzzle.as_ref().expect("emit_state was not called")
     }
 
     /// Sends one raw key/button code straight to the mid-end. Returns

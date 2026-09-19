@@ -5,7 +5,7 @@ use crate::render::{CursorStyle, LockStyle, Styles};
 use common::board::{Grid, GridDimensions, TileCoord};
 use common::ffi::{Preset, RawDrawing, RawDrawingApi, RawGame};
 use common::menu::{self, Action, BodySpec, ButtonSpec, LegendEntry, LegendGroup, TabSpec};
-use common::session::{Frontend, Session};
+use common::session::{DrawHandle, Session};
 use std::ffi::{CStr, c_char, c_int};
 
 unsafe extern "C" {
@@ -123,7 +123,7 @@ extern "C" fn rust_emit_state(dr: *mut RawDrawing, data: *const RawLiveState) {
     let data = unsafe { &*data };
     let width = data.width as usize;
     let height = data.height as usize;
-    let frontend = unsafe { &mut *((*dr).handle as *mut Frontend<NetPuzzle>) };
+    let handle = unsafe { &mut *((*dr).handle as *mut DrawHandle<NetPuzzle>) };
 
     let raw_active = unsafe { std::slice::from_raw_parts(data.active, width * height) };
     let raw_tiles = unsafe { std::slice::from_raw_parts(data.tiles, width * height) };
@@ -141,7 +141,7 @@ extern "C" fn rust_emit_state(dr: *mut RawDrawing, data: *const RawLiveState) {
         })
         .collect();
 
-    frontend.puzzle = Some(NetPuzzle {
+    handle.puzzle = Some(NetPuzzle {
         dimensions: (width, height),
         tiles: tiles.chunks(width).map(|row| row.to_vec()).collect(),
         cursor: Cursor {
@@ -158,10 +158,10 @@ extern "C" fn rust_emit_state(dr: *mut RawDrawing, data: *const RawLiveState) {
 /// the same `game_redraw`.
 #[unsafe(no_mangle)]
 extern "C" fn rust_status_bar(dr: *mut RawDrawing, text: *const c_char) {
-    let frontend = unsafe { &mut *((*dr).handle as *mut Frontend<NetPuzzle>) };
+    let handle = unsafe { &mut *((*dr).handle as *mut DrawHandle<NetPuzzle>) };
     let text = unsafe { CStr::from_ptr(text) }.to_string_lossy().into_owned();
 
-    frontend.puzzle.as_mut().expect("emit_state was not called").status = text;
+    handle.puzzle.as_mut().expect("emit_state was not called").status = text;
 }
 
 /// Net's mouse inputs.

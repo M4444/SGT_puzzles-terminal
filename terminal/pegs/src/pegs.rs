@@ -3,7 +3,7 @@
 use common::board::{Grid, TileCoord};
 use common::ffi::{Preset, RawDrawing, RawDrawingApi, RawGame};
 use common::menu::{self, LegendEntry, LegendGroup, TabSpec};
-use common::session::{Frontend, Session};
+use common::session::{DrawHandle, Session};
 use std::ffi::{c_char, c_int};
 
 unsafe extern "C" {
@@ -72,12 +72,12 @@ extern "C" fn rust_emit_state(dr: *mut RawDrawing, data: *const RawLiveState) {
     let data = unsafe { &*data };
     let width = data.width as usize;
     let height = data.height as usize;
-    let frontend = unsafe { &mut *((*dr).handle as *mut Frontend<PegsPuzzle>) };
+    let handle = unsafe { &mut *((*dr).handle as *mut DrawHandle<PegsPuzzle>) };
 
     let grid = unsafe { std::slice::from_raw_parts(data.grid, width * height) };
     let tiles: Vec<Tile> = grid.iter().map(|&value| Tile::from_value(value)).collect();
 
-    frontend.puzzle = Some(PegsPuzzle {
+    handle.puzzle = Some(PegsPuzzle {
         tiles: tiles.chunks(width).map(|row| row.to_vec()).collect(),
         cursor: Cursor {
             position: (data.cur_x as usize, data.cur_y as usize),
