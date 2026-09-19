@@ -1,8 +1,9 @@
 //! Renders a Pegs board as a box-drawing string for the terminal.
 
-use crate::pegs::{Cursor, PegsPuzzle, Tile, Tiles};
+use crate::pegs::{Cursor, PegsAction, PegsPuzzle, Tile, Tiles};
 use common::board::{Board, center_mid, draw_frame, draw_irregular_grid_outline, tile_rect};
-use common::canvas::{Canvas, Size, Weight, draw_rect_outline, flatten_to_lines};
+use common::canvas::{Canvas, Weight, draw_rect_outline, flatten_to_lines};
+use common::menu::{Menu, MenuState};
 
 const PEG: char = '⬤';
 const HOLE: char = '◯';
@@ -12,17 +13,26 @@ const PICKED_UP_PEG: char = '⨀';
 pub(crate) fn render_game(
     puzzle: &PegsPuzzle,
     wants_status_bar: bool,
+    menu_state: MenuState,
+    menu: &mut Menu<PegsAction>,
     terminal_columns: usize,
 ) -> String {
     let tiles = &puzzle.tiles;
 
     let board = Board::new((tiles[0].len(), tiles.len()), wants_status_bar);
-    let mut canvas = Canvas::new(board.rect(), Size::new(0, 0));
+    let board_rect = board.rect();
+    let mut canvas = Canvas::new(board_rect, menu.size());
 
     draw_irregular_grid_outline(&mut canvas, tiles, |&tile| tile != Tile::Obstacle);
     draw_pegs_and_holes(&mut canvas, tiles, puzzle.cursor);
     draw_cursor(&mut canvas, puzzle.cursor);
-    draw_frame(&mut canvas, board.frame);
+    // The frame is what marks the board as focused.
+    if !menu.has_focus() {
+        draw_frame(&mut canvas, board.frame);
+    }
+
+    menu.set_placement(board_rect, terminal_columns);
+    menu.draw(&mut canvas, menu_state, |action| match action {});
 
     flatten_to_lines(&canvas, terminal_columns).join("\n")
 }

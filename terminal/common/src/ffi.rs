@@ -254,6 +254,11 @@ impl Drop for Midend {
 }
 
 unsafe extern "C" {
+    /// Whether the game has a solver.
+    pub(crate) fn can_solve() -> bool;
+}
+
+unsafe extern "C" {
     fn smalloc(size: usize) -> *mut c_void;
 }
 

@@ -197,13 +197,13 @@ pub(crate) enum NetAction {
 }
 
 /// Net's menu tabs, the usual ones with its two style tabs among them.
-pub(crate) fn tab_specs(presets: &[Preset]) -> Vec<TabSpec<NetAction>> {
+pub(crate) fn tab_specs(presets: &[Preset], can_solve: bool) -> Vec<TabSpec<NetAction>> {
     let styles = vec![
         TabSpec { name: Some("Cursor Style"), body: BodySpec::Choices(cursor_styles()) },
         TabSpec { name: Some("Lock Style"), body: BodySpec::Choices(lock_styles()) },
     ];
 
-    menu::tabs(presets, styles, GAME_CONTROLS)
+    menu::tabs(presets, can_solve, styles, GAME_CONTROLS)
 }
 
 fn cursor_styles() -> Vec<ButtonSpec<NetAction>> {
@@ -313,5 +313,11 @@ mod tests {
 
         assert_eq!(session.puzzle().dimensions, (9, 9));
         assert_eq!(session.which_preset(), Some(nine_by_nine.id));
+    }
+
+    /// Net has a solver, so its menu offers Solve.
+    #[test]
+    fn net_can_solve() {
+        assert!(new_session().can_solve());
     }
 }

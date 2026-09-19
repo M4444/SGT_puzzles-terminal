@@ -3,6 +3,7 @@
 
 use crate::canvas::{Canvas, Coord, Mark, Rect, Size, Weight, draw_line, draw_rect_outline};
 use crate::ffi::Preset;
+use crate::session::Session;
 
 /// The menu's tabs, listed top to bottom, with `G` standing for the
 /// game's own action type.
@@ -369,6 +370,17 @@ pub struct MenuState {
     pub can_redo: bool,
 }
 
+impl MenuState {
+    /// Reads the menu state off the session's current game.
+    pub fn new<P>(session: &Session<P>) -> MenuState {
+        MenuState {
+            preset: session.which_preset(),
+            can_undo: session.can_undo(),
+            can_redo: session.can_redo(),
+        }
+    }
+}
+
 /// Whether a choice's action sets what the game already uses.
 fn is_current<G: Copy>(
     action: Action<G>,
@@ -407,11 +419,12 @@ struct Button<G> {
 /// tabs sit between the presets and the controls.
 pub fn tabs<G>(
     presets: &[Preset],
+    can_solve: bool,
     settings: Vec<TabSpec<G>>,
     game_controls: &'static [LegendGroup],
 ) -> Vec<TabSpec<G>> {
     let mut tabs = vec![
-        TabSpec { name: None, body: BodySpec::Buttons(common_actions()) },
+        TabSpec { name: None, body: BodySpec::Buttons(common_actions(can_solve)) },
         TabSpec { name: Some("Type"), body: BodySpec::Choices(preset_buttons(presets)) },
     ];
 
@@ -421,16 +434,22 @@ pub fn tabs<G>(
     tabs
 }
 
-/// The actions every game's menu offers.
-fn common_actions<G>() -> Vec<ButtonSpec<G>> {
-    vec![
+/// The row of actions at the top of a game's menu. Solve is left out
+/// for a game with no solver.
+fn common_actions<G>(can_solve: bool) -> Vec<ButtonSpec<G>> {
+    let mut actions = vec![
         ButtonSpec::new(Action::NewGame, "New Game"),
         ButtonSpec::new(Action::Restart, "Restart"),
         ButtonSpec::new(Action::Undo, "Undo"),
         ButtonSpec::new(Action::Redo, "Redo"),
-        ButtonSpec::new(Action::Solve, "Solve"),
         ButtonSpec::new(Action::Quit, "Quit"),
-    ]
+    ];
+
+    if can_solve {
+        // Solve sits just before Quit.
+        actions.insert(actions.len() - 1, ButtonSpec::new(Action::Solve, "Solve"));
+    }
+    actions
 }
 
 /// The presets the game offers, in the order the mid-end lists them.
@@ -706,7 +725,7 @@ mod tests {
 
     /// A menu with a game's tabs, presets and all, every tab closed.
     fn menu() -> Menu<GameAction> {
-        Menu::new(tabs(&presets(), settings(), GAME_CONTROLS))
+        Menu::new(tabs(&presets(), true, settings(), GAME_CONTROLS))
     }
 
     /// The widest tab sets the width, open or not, so opening one
@@ -740,8 +759,22 @@ mod tests {
         assert_eq!(menu.size().height, 7);
     }
 
+    /// A game with no solver gets every common action but Solve.
+    #[test]
+    fn solve_is_offered_only_with_a_solver() {
+        let labels = |can_solve| {
+            common_actions::<GameAction>(can_solve)
+                .into_iter()
+                .map(|spec| spec.label)
+                .collect::<Vec<_>>()
+        };
+
+        assert_eq!(labels(true), ["New Game", "Restart", "Undo", "Redo", "Solve", "Quit"]);
+        assert_eq!(labels(false), ["New Game", "Restart", "Undo", "Redo", "Quit"]);
+    }
+
     fn unavailable_labels(menu_state: MenuState) -> Vec<String> {
-        common_actions::<GameAction>()
+        common_actions::<GameAction>(true)
             .into_iter()
             .filter(|spec| !available(spec.action, menu_state))
             .map(|spec| spec.label)

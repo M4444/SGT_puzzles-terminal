@@ -1,23 +1,41 @@
 mod pegs;
 mod render;
 
-use common::input::key_code;
-use crossterm::event::Event;
+use common::menu;
+use common::session::Session;
+use pegs::{PegsAction, PegsPuzzle};
+
+/// The state Pegs' loop draws and updates.
+struct Game {
+    session: Session<PegsPuzzle>,
+    menu: menu::Menu<PegsAction>,
+}
 
 fn main() {
-    let mut session = pegs::new_session();
+    let session = pegs::new_session();
+    let menu = menu::Menu::new(pegs::tab_specs(&session.presets(), session.can_solve()));
+    let mut game = Game { session, menu };
 
     common::terminal::run(
-        &mut session,
-        |session, columns| {
-            render::render_game(session.puzzle(), session.wants_status_bar(), columns)
+        &mut game,
+        |game, columns| {
+            render::render_game(
+                game.session.puzzle(),
+                game.session.wants_status_bar(),
+                menu::MenuState::new(&game.session),
+                &mut game.menu,
+                columns,
+            )
         },
-        |session, event| match event {
-            Event::Key(key) => match key_code(key) {
-                Some(button) => session.process_key(button),
-                None => true,
-            },
-            _ => true,
+        |game, event| {
+            common::input::take_event(
+                event,
+                &mut game.menu,
+                &mut game.session,
+                |action| match action {},
+                // Clicks on the board do nothing.
+                |_, _, _| true,
+            )
         },
     );
 }

@@ -8,4 +8,3 @@ cc = "1"
 
 [dependencies]
 common = { path = "../common" }
-crossterm = "0.29.0"

@@ -1,7 +1,7 @@
 //! A live, playable game: the mid-end and the puzzle its callbacks
 //! hand back.
 
-use crate::ffi::{Midend, Preset, RawDrawingApi, RawGame};
+use crate::ffi::{self, Midend, Preset, RawDrawingApi, RawGame};
 use std::ffi::{c_int, c_void};
 
 /// The front end's state, recovered from `dr->handle` by every
@@ -74,6 +74,10 @@ impl<P> Session<P> {
 
     pub fn can_redo(&self) -> bool {
         self.midend.can_redo()
+    }
+
+    pub fn can_solve(&self) -> bool {
+        unsafe { ffi::can_solve() }
     }
 
     pub fn presets(&self) -> Vec<Preset> {

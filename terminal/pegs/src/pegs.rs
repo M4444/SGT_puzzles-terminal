@@ -1,7 +1,8 @@
-//! Generating and reading Pegs puzzles.
+//! Generating and reading Pegs puzzles, with the menu tabs Pegs offers.
 
 use common::board::{Grid, TileCoord};
-use common::ffi::{RawDrawing, RawDrawingApi, RawGame};
+use common::ffi::{Preset, RawDrawing, RawDrawingApi, RawGame};
+use common::menu::{self, LegendEntry, LegendGroup, TabSpec};
 use common::session::{Frontend, Session};
 use std::ffi::{c_char, c_int};
 
@@ -91,6 +92,25 @@ extern "C" fn rust_emit_state(dr: *mut RawDrawing, data: *const RawLiveState) {
 #[unsafe(no_mangle)]
 extern "C" fn rust_status_bar(_dr: *mut RawDrawing, _text: *const c_char) {}
 
+/// The keyboard inputs Pegs takes.
+const KEYBOARD_CONTROLS: &[LegendEntry] = &[
+    LegendEntry { input: "Arrows", description: "move cursor / jump with picked-up peg" },
+    LegendEntry { input: "Enter / Space", description: "pick up / put down peg" },
+];
+
+const GAME_CONTROLS: &[LegendGroup] =
+    &[LegendGroup { label: Some("Keyboard:"), entries: KEYBOARD_CONTROLS }];
+
+/// Pegs has no menu choices of its own.
+#[derive(Clone, Copy)]
+pub(crate) enum PegsAction {}
+
+/// Pegs' menu tabs, just the usuals since it doesn't have ones that are
+/// specific to it.
+pub(crate) fn tab_specs(presets: &[Preset], can_solve: bool) -> Vec<TabSpec<PegsAction>> {
+    menu::tabs(presets, can_solve, Vec::new(), GAME_CONTROLS)
+}
+
 /// Starts a game of Pegs.
 pub(crate) fn new_session() -> Session<PegsPuzzle> {
     unsafe { Session::new(&THEGAME, &TERMINAL_DRAWING_API) }
@@ -112,5 +132,11 @@ mod tests {
         assert_eq!(tiles[3][3], Tile::Hole);
         assert_eq!(tiles[0][0], Tile::Obstacle);
         assert_eq!(tiles[3][0], Tile::Peg);
+    }
+
+    /// Pegs has no solver, so its menu leaves out Solve.
+    #[test]
+    fn pegs_cannot_solve() {
+        assert!(!new_session().can_solve());
     }
 }

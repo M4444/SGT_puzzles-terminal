@@ -4,7 +4,8 @@
  * API shared by every game. Every drawing call here is a no-op, since
  * this front end renders text directly. The exceptions are
  * status_bar() and emit_state(), which hand the status line text and
- * the game state to the Rust side.
+ * the game state to the Rust side. Alongside the stubs, can_solve()
+ * reports whether the game has a solver.
  * Each game's own file, terminal/<game>/terminal-<game>.c, holds what
  * only that game needs.
  */
@@ -73,6 +74,14 @@ const drawing_api terminal_drawing_api = {
     .emit_state = rust_emit_state,
 };
 #endif
+
+/* Returns thegame.can_solve, which the mid-end has no call for. */
+bool can_solve(void);
+
+bool can_solve(void)
+{
+    return thegame.can_solve;
+}
 
 void fatal(const char *fmt, ...)
 {

@@ -361,7 +361,10 @@ mod tests {
     /// A canvas sized for the board and its menu. These tests only need
     /// the space the menu takes up, so it is built without presets.
     fn canvas(dimensions: GridDimensions) -> Canvas {
-        Canvas::new(Board::new(dimensions, true).rect(), Menu::new(net::tab_specs(&[])).size())
+        Canvas::new(
+            Board::new(dimensions, true).rect(),
+            Menu::new(net::tab_specs(&[], true)).size(),
+        )
     }
 
     #[test]
@@ -374,7 +377,7 @@ mod tests {
                 true,
                 Styles::default(),
                 MenuState::default(),
-                &mut Menu::new(net::tab_specs(&[])),
+                &mut Menu::new(net::tab_specs(&[], true)),
                 usize::MAX,
             );
         }
@@ -423,7 +426,7 @@ mod tests {
     /// start at 28.
     #[test]
     fn menu_draws_where_it_is_placed() {
-        let mut menu = Menu::new(net::tab_specs(&[]));
+        let mut menu = Menu::new(net::tab_specs(&[], true));
         // Menu Controls' header, opened so a legend is drawn too.
         menu.click((3, 6));
 
@@ -449,7 +452,7 @@ mod tests {
     /// menu runs past it.
     #[test]
     fn headers_stop_at_the_terminal_edge() {
-        let mut menu = Menu::new(net::tab_specs(&[]));
+        let mut menu = Menu::new(net::tab_specs(&[], true));
         let board_rect = Board::new((5, 5), true).rect();
         let mut canvas = Canvas::new(board_rect, menu.size());
 
@@ -471,7 +474,7 @@ mod tests {
         let session = crate::net::new_session();
         let puzzle = session.puzzle();
         let dim = SetAttribute(Attribute::Dim).to_string();
-        let mut menu = Menu::new(net::tab_specs(&[]));
+        let mut menu = Menu::new(net::tab_specs(&[], true));
         let mut render = |menu_state| {
             render_game(puzzle, true, Styles::default(), menu_state, &mut menu, usize::MAX)
         };

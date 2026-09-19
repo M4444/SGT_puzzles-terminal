@@ -16,23 +16,17 @@ struct Game {
 
 fn main() {
     let session = net::new_session();
-    let menu = menu::Menu::new(net::tab_specs(&session.presets()));
+    let menu = menu::Menu::new(net::tab_specs(&session.presets(), session.can_solve()));
     let mut game = Game { session, menu, styles: render::Styles::default() };
 
     common::terminal::run(
         &mut game,
         |game, columns| {
-            let menu_state = menu::MenuState {
-                preset: game.session.which_preset(),
-                can_undo: game.session.can_undo(),
-                can_redo: game.session.can_redo(),
-            };
-
             render::render_game(
                 game.session.puzzle(),
                 game.session.wants_status_bar(),
                 game.styles,
-                menu_state,
+                menu::MenuState::new(&game.session),
                 &mut game.menu,
                 columns,
             )
