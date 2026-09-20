@@ -686,6 +686,9 @@ fn available<G>(action: Action<G>, menu_state: MenuState) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::board::Board;
+    use crate::canvas::flatten_to_lines;
+    use crossterm::style::{Attribute, SetAttribute};
 
     /// Stands in for the actions a game defines.
     #[derive(Clone, Copy)]
@@ -726,6 +729,70 @@ mod tests {
     /// A menu with a game's tabs, presets and all, every tab closed.
     fn menu() -> Menu<GameAction> {
         Menu::new(tabs(&presets(), true, settings(), GAME_CONTROLS))
+    }
+
+    /// A placed menu draws where it was placed. Beside a 5x5 board,
+    /// whose frame ends at column 24, the divider sits at 26 and the
+    /// tabs start at 28.
+    #[test]
+    fn menu_draws_where_it_is_placed() {
+        let mut menu = menu();
+        // Menu Controls' header, opened so a legend is drawn too.
+        menu.click((3, 5));
+
+        let board_rect = Board::new((5, 5), true).rect();
+        let mut canvas = Canvas::new(board_rect, menu.size());
+        menu.set_placement(board_rect, usize::MAX);
+        menu.draw(&mut canvas, MenuState::default(), |_| false);
+
+        // The divider, ending on the board's last row, then the first
+        // button's corner, the Choices header's line and the legend's
+        // first entry.
+        assert_eq!(canvas.char_at((26, 5)), '│');
+        assert_eq!(canvas.char_at((26, 13)), '╵');
+        assert_eq!(canvas.char_at((26, 14)), ' ');
+        assert_eq!(canvas.char_at((28, 0)), '┌');
+        assert_eq!(canvas.char_at((29, 4)), '─');
+        assert_eq!(canvas.char_at((28, 7)), 'N');
+    }
+
+    /// A header's line and arrow stop at the terminal's edge when the
+    /// menu runs past it.
+    #[test]
+    fn headers_stop_at_the_terminal_edge() {
+        let mut menu = menu();
+        let board_rect = Board::new((5, 5), true).rect();
+        let mut canvas = Canvas::new(board_rect, menu.size());
+
+        // Type's header would run to column 84 in a terminal wide
+        // enough, but this one is 60 columns wide.
+        menu.set_placement(board_rect, 60);
+        menu.draw(&mut canvas, MenuState::default(), |_| false);
+
+        assert_eq!(canvas.char_at((59, 3)), '▼');
+        assert_eq!(canvas.char_at((60, 3)), ' ');
+    }
+
+    /// An unavailable action's button is dimmed, so a drawn menu
+    /// carries the dim attribute only when one of them is unavailable.
+    #[test]
+    fn unavailable_buttons_are_drawn_dimmed() {
+        let dim = SetAttribute(Attribute::Dim).to_string();
+        let draw = |menu_state| {
+            let mut menu = menu();
+            let board_rect = Board::new((5, 5), true).rect();
+            let mut canvas = Canvas::new(board_rect, menu.size());
+
+            menu.set_placement(board_rect, usize::MAX);
+            menu.draw(&mut canvas, menu_state, |_| false);
+            flatten_to_lines(&canvas, usize::MAX).join("\n")
+        };
+
+        let fresh = MenuState { can_undo: false, can_redo: false, ..MenuState::default() };
+        let mid_game = MenuState { can_undo: true, can_redo: true, ..MenuState::default() };
+
+        assert!(draw(fresh).contains(&dim));
+        assert!(!draw(mid_game).contains(&dim));
     }
 
     /// The widest tab sets the width, open or not, so opening one

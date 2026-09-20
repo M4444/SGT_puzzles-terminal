@@ -326,14 +326,11 @@ fn draw_barriers(canvas: &mut Canvas, tiles: &Tiles) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::Net;
     use crate::net;
     use common::board::{Board, TileCoordNeighbors};
     use common::canvas::flatten_to_lines;
-    use common::menu::{Menu, MenuState};
+    use common::menu::Menu;
     use common::session::Session;
-    use common::terminal::render_game;
-    use crossterm::style::{Attribute, SetAttribute};
 
     /// A canvas sized for the board and its menu. These tests only need
     /// the space the menu takes up, so it is built without presets.
@@ -345,18 +342,12 @@ mod tests {
     }
 
     #[test]
-    fn render_game_does_not_panic_across_many_generated_boards() {
+    fn draw_board_does_not_panic_across_many_generated_boards() {
         for _ in 0..100 {
             let session = Session::<NetPuzzle>::start();
             let puzzle = session.puzzle();
-            render_game(
-                &Net::default(),
-                puzzle,
-                true,
-                MenuState::default(),
-                &mut Menu::new(net::tab_specs(&[], true)),
-                usize::MAX,
-            );
+
+            draw_board(&mut canvas(puzzle.dimensions), puzzle, Styles::default());
         }
     }
 
@@ -396,71 +387,6 @@ mod tests {
         assert!(canvas.is_reversed(center_mid((1, 1))));
         assert!(canvas.is_reversed(top_left((2, 1))));
         assert!(canvas.is_reversed(top_left((1, 2))));
-    }
-
-    /// A placed menu draws where it was placed. Beside a 5x5 board, whose
-    /// frame ends at column 24, the divider sits at 26 and the tabs
-    /// start at 28.
-    #[test]
-    fn menu_draws_where_it_is_placed() {
-        let mut menu = Menu::new(net::tab_specs(&[], true));
-        // Menu Controls' header, opened so a legend is drawn too.
-        menu.click((3, 6));
-
-        let board_rect = Board::new((5, 5), true).rect();
-        let mut canvas = Canvas::new(board_rect, menu.size());
-        menu.set_placement(board_rect, usize::MAX);
-        menu.draw(&mut canvas, MenuState::default(), |action| {
-            net::is_current(action, Styles::default())
-        });
-
-        // The divider, ending on the board's last row, then the first
-        // button's corner, Cursor Style's header line and the legend's
-        // first label.
-        assert_eq!(canvas.char_at((26, 5)), '│');
-        assert_eq!(canvas.char_at((26, 13)), '╵');
-        assert_eq!(canvas.char_at((26, 14)), ' ');
-        assert_eq!(canvas.char_at((28, 0)), '┌');
-        assert_eq!(canvas.char_at((29, 4)), '─');
-        assert_eq!(canvas.char_at((28, 7)), 'G');
-    }
-
-    /// A header's line and arrow stop at the terminal's edge when the
-    /// menu runs past it.
-    #[test]
-    fn headers_stop_at_the_terminal_edge() {
-        let mut menu = Menu::new(net::tab_specs(&[], true));
-        let board_rect = Board::new((5, 5), true).rect();
-        let mut canvas = Canvas::new(board_rect, menu.size());
-
-        // Type's header would run to column 84 in a terminal wide
-        // enough, but this one is 60 columns wide.
-        menu.set_placement(board_rect, 60);
-        menu.draw(&mut canvas, MenuState::default(), |action| {
-            net::is_current(action, Styles::default())
-        });
-
-        assert_eq!(canvas.char_at((59, 3)), '▼');
-        assert_eq!(canvas.char_at((60, 3)), ' ');
-    }
-
-    /// An unavailable action's button is dimmed, so a rendered game
-    /// carries the dim attribute only when one of them is unavailable.
-    #[test]
-    fn render_game_dims_unavailable_menu_buttons() {
-        let session = Session::<NetPuzzle>::start();
-        let puzzle = session.puzzle();
-        let dim = SetAttribute(Attribute::Dim).to_string();
-        let mut menu = Menu::new(net::tab_specs(&[], true));
-        let mut render = |menu_state| {
-            render_game(&Net::default(), puzzle, true, menu_state, &mut menu, usize::MAX)
-        };
-
-        let fresh = MenuState { can_undo: false, can_redo: false, ..MenuState::default() };
-        let mid_game = MenuState { can_undo: true, can_redo: true, ..MenuState::default() };
-
-        assert!(render(fresh).contains(&dim));
-        assert!(!render(mid_game).contains(&dim));
     }
 
     fn grid_with_locked((width, height): GridDimensions, locked_positions: &[TileCoord]) -> Tiles {

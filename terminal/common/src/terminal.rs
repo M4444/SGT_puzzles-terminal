@@ -78,7 +78,7 @@ impl<T: TerminalGame> Frontend<T> {
 
 /// Draws a game's board, the frame and status bar around it and the
 /// menu beside it, then flattens the result to lines of text.
-pub fn render_game<T: TerminalGame>(
+fn render_game<T: TerminalGame>(
     game: &T,
     puzzle: &T::Puzzle,
     wants_status_bar: bool,
