@@ -1,6 +1,6 @@
 //! Generating and reading Pegs puzzles, with the menu tabs Pegs offers.
 
-use common::board::{Grid, TileCoord};
+use common::board::{Grid, GridDimensions, Puzzle, TileCoord};
 use common::ffi::{Preset, RawDrawing};
 use common::menu::{self, LegendEntry, LegendGroup, TabSpec};
 use common::session::DrawHandle;
@@ -44,6 +44,12 @@ pub(crate) struct Cursor {
 pub(crate) struct PegsPuzzle {
     pub tiles: Tiles,
     pub cursor: Cursor,
+}
+
+impl Puzzle for PegsPuzzle {
+    fn dimensions(&self) -> GridDimensions {
+        (self.tiles[0].len(), self.tiles.len())
+    }
 }
 
 /// Mirrors `struct live_state` (pegs.c), what Pegs hands over through

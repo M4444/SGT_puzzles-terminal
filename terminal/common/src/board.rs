@@ -11,6 +11,13 @@ pub type Grid<T> = Vec<Vec<T>>;
 pub type GridDimensions = (usize, usize);
 pub type TileCoord = (usize, usize);
 
+/// A game's puzzle, whatever else it holds. Every one is played on a
+/// grid of tiles.
+pub trait Puzzle {
+    /// The board's size in tiles.
+    fn dimensions(&self) -> GridDimensions;
+}
+
 /// A tile coordinate's neighbours one step over in each direction. The
 /// checked versions give `None` where the step would leave `usize`'s
 /// range, so from the top row there's no tile above.

@@ -1,9 +1,9 @@
 mod pegs;
 mod render;
 
-use common::canvas::Coord;
+use common::canvas::{Canvas, Coord};
 use common::ffi::Preset;
-use common::menu::{Menu, MenuState, TabSpec};
+use common::menu::TabSpec;
 use common::session::Session;
 use common::terminal::TerminalGame;
 use pegs::{PegsAction, PegsPuzzle};
@@ -20,15 +20,12 @@ impl TerminalGame for Pegs {
         pegs::tab_specs(presets, can_solve)
     }
 
-    fn render(
-        &self,
-        puzzle: &PegsPuzzle,
-        wants_status_bar: bool,
-        menu_state: MenuState,
-        menu: &mut Menu<PegsAction>,
-        terminal_columns: usize,
-    ) -> String {
-        render::render_game(puzzle, wants_status_bar, menu_state, menu, terminal_columns)
+    fn draw_board(&self, canvas: &mut Canvas, puzzle: &PegsPuzzle) {
+        render::draw_board(canvas, puzzle);
+    }
+
+    fn is_action_current(&self, action: PegsAction) -> bool {
+        match action {}
     }
 
     fn take_action(&mut self, action: PegsAction) {

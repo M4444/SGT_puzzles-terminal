@@ -2,7 +2,7 @@
 
 use crate::ffi::window_offset;
 use crate::render::{CursorStyle, LockStyle, Styles};
-use common::board::{Grid, GridDimensions, TileCoord};
+use common::board::{Grid, GridDimensions, Puzzle, TileCoord};
 use common::ffi::{Preset, RawDrawing};
 use common::menu::{self, Action, BodySpec, ButtonSpec, LegendEntry, LegendGroup, TabSpec};
 use common::session::{DrawHandle, Session};
@@ -88,6 +88,12 @@ pub(crate) struct NetPuzzle {
     pub source: TileCoord,
     pub origin: TileCoord,
     pub status: String,
+}
+
+impl Puzzle for NetPuzzle {
+    fn dimensions(&self) -> GridDimensions {
+        self.dimensions
+    }
 }
 
 /// Mirrors `struct live_state` (net.c), what Net hands over through the

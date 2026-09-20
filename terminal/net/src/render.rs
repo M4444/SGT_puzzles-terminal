@@ -1,54 +1,25 @@
-//! Renders a Net board as a box-drawing string for the terminal.
-//!
-//! Given a `NetPuzzle`, `render_game()` draws the board onto a `Canvas`
-//! in phases (grid lines, wires and endpoints, source, barriers,
-//! cursor, frame, status bar), adds the side menu, then flattens the
-//! result to text.
+//! Draws a Net board onto a canvas in phases, from the grid lines and
+//! the wires on them to the barriers, the locked tiles and the cursor.
 
-use crate::net::{self, Cursor, NetAction, NetPuzzle, Tiles};
+use crate::net::{Cursor, NetPuzzle, Tiles};
 use common::board::{
-    Board, GridDimensions, TileCoord, bottom_border_middle, bottom_left, bottom_mid, bottom_right,
-    center_left, center_mid, center_right, draw_frame, draw_grid_lines, draw_status_bar, left_side,
-    right_side, tile_content_coords, tile_full_coords, tile_rect, top_border_middle, top_left,
-    top_mid, top_right,
+    GridDimensions, TileCoord, bottom_border_middle, bottom_left, bottom_mid, bottom_right,
+    center_left, center_mid, center_right, draw_grid_lines, left_side, right_side,
+    tile_content_coords, tile_full_coords, tile_rect, top_border_middle, top_left, top_mid,
+    top_right,
 };
-use common::canvas::{Canvas, Mark, Weight, draw_line, draw_rect_outline, flatten_to_lines};
-use common::menu::{Menu, MenuState};
+use common::canvas::{Canvas, Mark, Weight, draw_line, draw_rect_outline};
 use std::borrow::Cow;
 
-pub(crate) fn render_game(
-    puzzle: &NetPuzzle,
-    wants_status_bar: bool,
-    styles: Styles,
-    menu_state: MenuState,
-    menu: &mut Menu<NetAction>,
-    terminal_columns: usize,
-) -> String {
+pub(crate) fn draw_board(canvas: &mut Canvas, puzzle: &NetPuzzle, styles: Styles) {
     let puzzle = puzzle_relative_to_origin(puzzle);
-    let dimensions = puzzle.dimensions;
 
-    let board = Board::new(dimensions, wants_status_bar);
-    let board_rect = board.rect();
-    let mut canvas = Canvas::new(board_rect, menu.size());
-
-    draw_grid_lines(&mut canvas, dimensions);
-    draw_wires_and_endpoints(&mut canvas, &puzzle.tiles);
-    draw_source(&mut canvas, puzzle.source);
-    draw_barriers(&mut canvas, &puzzle.tiles);
-    draw_locked(&mut canvas, &puzzle.tiles, styles.lock);
-    draw_cursor(&mut canvas, puzzle.cursor, styles.cursor);
-    // The frame is what marks the board as focused.
-    if !menu.has_focus() {
-        draw_frame(&mut canvas, board.frame);
-    }
-    if let Some(start) = board.status_bar_start {
-        draw_status_bar(&mut canvas, start, &puzzle.status);
-    }
-
-    menu.set_placement(board_rect, terminal_columns);
-    menu.draw(&mut canvas, menu_state, |action| net::is_current(action, styles));
-
-    flatten_to_lines(&canvas, terminal_columns).join("\n")
+    draw_grid_lines(canvas, puzzle.dimensions);
+    draw_wires_and_endpoints(canvas, &puzzle.tiles);
+    draw_source(canvas, puzzle.source);
+    draw_barriers(canvas, &puzzle.tiles);
+    draw_locked(canvas, &puzzle.tiles, styles.lock);
+    draw_cursor(canvas, puzzle.cursor, styles.cursor);
 }
 
 /// Transforms a puzzle's tiles, source, and cursor from game coordinates
@@ -355,8 +326,13 @@ fn draw_barriers(canvas: &mut Canvas, tiles: &Tiles) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use common::board::TileCoordNeighbors;
+    use crate::Net;
+    use crate::net;
+    use common::board::{Board, TileCoordNeighbors};
+    use common::canvas::flatten_to_lines;
+    use common::menu::{Menu, MenuState};
     use common::session::Session;
+    use common::terminal::render_game;
     use crossterm::style::{Attribute, SetAttribute};
 
     /// A canvas sized for the board and its menu. These tests only need
@@ -374,9 +350,9 @@ mod tests {
             let session = Session::<NetPuzzle>::start();
             let puzzle = session.puzzle();
             render_game(
+                &Net::default(),
                 puzzle,
                 true,
-                Styles::default(),
                 MenuState::default(),
                 &mut Menu::new(net::tab_specs(&[], true)),
                 usize::MAX,
@@ -477,7 +453,7 @@ mod tests {
         let dim = SetAttribute(Attribute::Dim).to_string();
         let mut menu = Menu::new(net::tab_specs(&[], true));
         let mut render = |menu_state| {
-            render_game(puzzle, true, Styles::default(), menu_state, &mut menu, usize::MAX)
+            render_game(&Net::default(), puzzle, true, menu_state, &mut menu, usize::MAX)
         };
 
         let fresh = MenuState { can_undo: false, can_redo: false, ..MenuState::default() };

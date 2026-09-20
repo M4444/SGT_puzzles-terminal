@@ -3,9 +3,9 @@ mod input;
 mod net;
 mod render;
 
-use common::canvas::Coord;
+use common::canvas::{Canvas, Coord};
 use common::ffi::Preset;
-use common::menu::{Menu, MenuState, TabSpec};
+use common::menu::TabSpec;
 use common::session::Session;
 use common::terminal::TerminalGame;
 use net::{NetAction, NetPuzzle};
@@ -25,22 +25,16 @@ impl TerminalGame for Net {
         net::tab_specs(presets, can_solve)
     }
 
-    fn render(
-        &self,
-        puzzle: &NetPuzzle,
-        wants_status_bar: bool,
-        menu_state: MenuState,
-        menu: &mut Menu<NetAction>,
-        terminal_columns: usize,
-    ) -> String {
-        render::render_game(
-            puzzle,
-            wants_status_bar,
-            self.styles,
-            menu_state,
-            menu,
-            terminal_columns,
-        )
+    fn draw_board(&self, canvas: &mut Canvas, puzzle: &NetPuzzle) {
+        render::draw_board(canvas, puzzle, self.styles);
+    }
+
+    fn status(puzzle: &NetPuzzle) -> &str {
+        &puzzle.status
+    }
+
+    fn is_action_current(&self, action: NetAction) -> bool {
+        net::is_current(action, self.styles)
     }
 
     fn take_action(&mut self, action: NetAction) {
