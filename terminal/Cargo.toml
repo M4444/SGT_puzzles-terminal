@@ -1,3 +1,8 @@
 [workspace]
-members = ["common", "net", "pegs"]
 resolver = "3"
+members = [
+    "common",
+    "fifteen",
+    "net",
+    "pegs",
+]

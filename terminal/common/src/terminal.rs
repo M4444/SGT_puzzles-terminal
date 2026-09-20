@@ -2,7 +2,7 @@
 //! the hooks each game supplies.
 
 use crate::board::{Board, Puzzle, draw_frame, draw_status_bar};
-use crate::canvas::{Canvas, Coord, flatten_to_lines};
+use crate::canvas::{Canvas, Coord, Size, flatten_to_lines};
 use crate::ffi::Preset;
 use crate::input;
 use crate::menu::{Menu, MenuState, TabSpec};
@@ -73,6 +73,21 @@ impl<T: TerminalGame> Frontend<T> {
             |action| self.game.take_action(action),
             T::click_board,
         )
+    }
+}
+
+/// Draws a board on its own, framed, with no session or menu behind
+/// it, then prints it. A game uses this while its state is still
+/// hardcoded.
+pub fn preview<T: TerminalGame>(game: T, puzzle: &T::Puzzle) {
+    let board = Board::new(puzzle.dimensions(), false);
+    let mut canvas = Canvas::new(board.rect(), Size::new(0, 0));
+
+    game.draw_board(&mut canvas, puzzle);
+    draw_frame(&mut canvas, board.frame);
+
+    for line in flatten_to_lines(&canvas, usize::MAX) {
+        println!("{line}");
     }
 }
 

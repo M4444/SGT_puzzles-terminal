@@ -83,6 +83,9 @@ const GRID_OFFSET_Y: usize = CANVAS_MARGIN_Y + FRAME_MARGIN_Y + 1;
 
 /// Columns per tile: two shared border columns plus three center columns.
 const TILE_WIDTH: usize = 5;
+/// The columns inside a tile's borders, which its content is drawn
+/// across.
+pub const TILE_CONTENT_WIDTH: usize = TILE_WIDTH - 2;
 /// Rows per tile: two shared border rows plus one center row.
 const TILE_HEIGHT: usize = 3;
 
