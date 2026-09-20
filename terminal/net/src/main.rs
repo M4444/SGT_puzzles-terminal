@@ -3,42 +3,55 @@ mod input;
 mod net;
 mod render;
 
-use common::menu;
+use common::canvas::Coord;
+use common::ffi::Preset;
+use common::menu::{Menu, MenuState, TabSpec};
 use common::session::Session;
+use common::terminal::TerminalGame;
 use net::{NetAction, NetPuzzle};
+use std::ffi::c_int;
 
-/// The state Net's loop draws and updates.
-struct Game {
-    session: Session<NetPuzzle>,
-    menu: menu::Menu<NetAction>,
+/// Net, with the styles its board is drawn in.
+#[derive(Default)]
+struct Net {
     styles: render::Styles,
 }
 
-fn main() {
-    let session = net::new_session();
-    let menu = menu::Menu::new(net::tab_specs(&session.presets(), session.can_solve()));
-    let mut game = Game { session, menu, styles: render::Styles::default() };
+impl TerminalGame for Net {
+    type Puzzle = NetPuzzle;
+    type Action = NetAction;
 
-    common::terminal::run(
-        &mut game,
-        |game, columns| {
-            render::render_game(
-                game.session.puzzle(),
-                game.session.wants_status_bar(),
-                game.styles,
-                menu::MenuState::new(&game.session),
-                &mut game.menu,
-                columns,
-            )
-        },
-        |game, event| {
-            common::input::take_event(
-                event,
-                &mut game.menu,
-                &mut game.session,
-                |action| input::take_action(action, &mut game.styles),
-                input::click_board,
-            )
-        },
-    );
+    fn tab_specs(presets: &[Preset], can_solve: bool) -> Vec<TabSpec<NetAction>> {
+        net::tab_specs(presets, can_solve)
+    }
+
+    fn render(
+        &self,
+        puzzle: &NetPuzzle,
+        wants_status_bar: bool,
+        menu_state: MenuState,
+        menu: &mut Menu<NetAction>,
+        terminal_columns: usize,
+    ) -> String {
+        render::render_game(
+            puzzle,
+            wants_status_bar,
+            self.styles,
+            menu_state,
+            menu,
+            terminal_columns,
+        )
+    }
+
+    fn take_action(&mut self, action: NetAction) {
+        input::take_action(action, &mut self.styles);
+    }
+
+    fn click_board(session: &mut Session<NetPuzzle>, position: Coord, button: c_int) -> bool {
+        input::click_board(session, position, button)
+    }
+}
+
+fn main() {
+    common::terminal::run(Net::default());
 }

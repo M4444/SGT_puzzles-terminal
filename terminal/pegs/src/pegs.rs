@@ -1,17 +1,10 @@
 //! Generating and reading Pegs puzzles, with the menu tabs Pegs offers.
 
 use common::board::{Grid, TileCoord};
-use common::ffi::{Preset, RawDrawing, RawDrawingApi, RawGame};
+use common::ffi::{Preset, RawDrawing};
 use common::menu::{self, LegendEntry, LegendGroup, TabSpec};
-use common::session::{DrawHandle, Session};
+use common::session::DrawHandle;
 use std::ffi::{c_char, c_int};
-
-unsafe extern "C" {
-    #[link_name = "thegame"]
-    static THEGAME: RawGame;
-    #[link_name = "terminal_drawing_api"]
-    static TERMINAL_DRAWING_API: RawDrawingApi;
-}
 
 /// What a tile on the grid holds.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -111,20 +104,16 @@ pub(crate) fn tab_specs(presets: &[Preset], can_solve: bool) -> Vec<TabSpec<Pegs
     menu::tabs(presets, can_solve, Vec::new(), GAME_CONTROLS)
 }
 
-/// Starts a game of Pegs.
-pub(crate) fn new_session() -> Session<PegsPuzzle> {
-    unsafe { Session::new(&THEGAME, &TERMINAL_DRAWING_API) }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use common::session::Session;
 
     /// Pegs starts on the 7x7 cross, with every tile holding a peg
     /// except the hole in the middle.
     #[test]
     fn a_fresh_game_is_the_cross() {
-        let session = new_session();
+        let session = Session::<PegsPuzzle>::start();
         let tiles = &session.puzzle().tiles;
 
         assert_eq!(tiles.len(), 7);
@@ -137,6 +126,6 @@ mod tests {
     /// Pegs has no solver, so its menu leaves out Solve.
     #[test]
     fn pegs_cannot_solve() {
-        assert!(!new_session().can_solve());
+        assert!(!Session::<PegsPuzzle>::start().can_solve());
     }
 }

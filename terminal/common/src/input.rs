@@ -32,7 +32,7 @@ const RIGHT_BUTTON: c_int = 0x0202;
 
 /// The code the mid-end knows a key press by, with its Ctrl and Shift
 /// modifiers folded in. Keys the mid-end has no code for give `None`.
-pub fn key_code(key: KeyEvent) -> Option<c_int> {
+fn key_code(key: KeyEvent) -> Option<c_int> {
     let mut code = match key.code {
         KeyCode::Char(character) => character as c_int,
         KeyCode::Up => CURSOR_UP,
@@ -57,7 +57,7 @@ pub fn key_code(key: KeyEvent) -> Option<c_int> {
 /// game's own menu actions go to `take_game_action`. A click the menu
 /// doesn't claim goes to `click_board`. Returns `false` if it signalled
 /// quit.
-pub fn take_event<P, G: Copy>(
+pub(crate) fn take_event<P, G: Copy>(
     event: Event,
     menu: &mut menu::Menu<G>,
     session: &mut Session<P>,

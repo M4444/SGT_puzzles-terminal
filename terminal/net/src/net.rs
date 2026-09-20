@@ -3,17 +3,10 @@
 use crate::ffi::window_offset;
 use crate::render::{CursorStyle, LockStyle, Styles};
 use common::board::{Grid, GridDimensions, TileCoord};
-use common::ffi::{Preset, RawDrawing, RawDrawingApi, RawGame};
+use common::ffi::{Preset, RawDrawing};
 use common::menu::{self, Action, BodySpec, ButtonSpec, LegendEntry, LegendGroup, TabSpec};
 use common::session::{DrawHandle, Session};
 use std::ffi::{CStr, c_char, c_int};
-
-unsafe extern "C" {
-    #[link_name = "thegame"]
-    static THEGAME: RawGame;
-    #[link_name = "terminal_drawing_api"]
-    static TERMINAL_DRAWING_API: RawDrawingApi;
-}
 
 /// Which directions a tile has a wire pointing in.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
@@ -234,11 +227,6 @@ pub(crate) fn is_current(action: NetAction, styles: Styles) -> bool {
     }
 }
 
-/// Starts a game of Net.
-pub(crate) fn new_session() -> Session<NetPuzzle> {
-    unsafe { Session::new(&THEGAME, &TERMINAL_DRAWING_API) }
-}
-
 /// Sends one mouse button press on the given tile, converting it into
 /// the pixel coordinates net.c's own click handling expects. Returns
 /// `false` if it signalled quit.
@@ -283,7 +271,7 @@ mod tests {
     /// Net offers five sizes, then the same five wrapping.
     #[test]
     fn presets_are_the_sizes_net_lists() {
-        let titles: Vec<String> = new_session()
+        let titles: Vec<String> = Session::<NetPuzzle>::start()
             .presets()
             .into_iter()
             .map(|preset| preset.title)
@@ -300,7 +288,7 @@ mod tests {
     /// one starts a new game at its size.
     #[test]
     fn setting_a_preset_starts_a_game_at_its_size() {
-        let mut session = new_session();
+        let mut session = Session::<NetPuzzle>::start();
         let presets = session.presets();
         let nine_by_nine = presets
             .iter()
@@ -318,6 +306,6 @@ mod tests {
     /// Net has a solver, so its menu offers Solve.
     #[test]
     fn net_can_solve() {
-        assert!(new_session().can_solve());
+        assert!(Session::<NetPuzzle>::start().can_solve());
     }
 }

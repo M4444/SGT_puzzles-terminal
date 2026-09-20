@@ -372,7 +372,7 @@ pub struct MenuState {
 
 impl MenuState {
     /// Reads the menu state off the session's current game.
-    pub fn new<P>(session: &Session<P>) -> MenuState {
+    pub(crate) fn new<P>(session: &Session<P>) -> MenuState {
         MenuState {
             preset: session.which_preset(),
             can_undo: session.can_undo(),

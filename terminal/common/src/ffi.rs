@@ -10,12 +10,12 @@ struct RawMidend {
 }
 
 #[repr(C)]
-pub struct RawGame {
+pub(crate) struct RawGame {
     _private: [u8; 0],
 }
 
 #[repr(C)]
-pub struct RawDrawingApi {
+pub(crate) struct RawDrawingApi {
     _private: [u8; 0],
 }
 
@@ -50,6 +50,15 @@ struct RawPresetMenu {
     n_entries: c_int,
     entries_size: c_int,
     entries: *const RawPresetMenuEntry,
+}
+
+unsafe extern "C" {
+    /// The game this binary is built with.
+    #[link_name = "thegame"]
+    pub(crate) static THEGAME: RawGame;
+    /// The drawing API from terminal.c.
+    #[link_name = "terminal_drawing_api"]
+    pub(crate) static TERMINAL_DRAWING_API: RawDrawingApi;
 }
 
 unsafe extern "C" {
@@ -97,7 +106,7 @@ const NO_PRESET: c_int = -1;
 /// The mid-end generates games, keeps the undo history and handles
 /// timers and game IDs. The drawing calls it makes silently no-op,
 /// since each game hands its state to Rust through its own hooks.
-pub struct Midend {
+pub(crate) struct Midend {
     raw: NonNull<RawMidend>,
 }
 

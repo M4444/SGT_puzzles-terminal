@@ -356,6 +356,7 @@ fn draw_barriers(canvas: &mut Canvas, tiles: &Tiles) {
 mod tests {
     use super::*;
     use common::board::TileCoordNeighbors;
+    use common::session::Session;
     use crossterm::style::{Attribute, SetAttribute};
 
     /// A canvas sized for the board and its menu. These tests only need
@@ -370,7 +371,7 @@ mod tests {
     #[test]
     fn render_game_does_not_panic_across_many_generated_boards() {
         for _ in 0..100 {
-            let session = crate::net::new_session();
+            let session = Session::<NetPuzzle>::start();
             let puzzle = session.puzzle();
             render_game(
                 puzzle,
@@ -471,7 +472,7 @@ mod tests {
     /// carries the dim attribute only when one of them is unavailable.
     #[test]
     fn render_game_dims_unavailable_menu_buttons() {
-        let session = crate::net::new_session();
+        let session = Session::<NetPuzzle>::start();
         let puzzle = session.puzzle();
         let dim = SetAttribute(Attribute::Dim).to_string();
         let mut menu = Menu::new(net::tab_specs(&[], true));

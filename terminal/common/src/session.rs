@@ -1,7 +1,7 @@
 //! A live, playable game: the mid-end and the puzzle its callbacks
 //! hand back.
 
-use crate::ffi::{self, Midend, Preset, RawDrawingApi, RawGame};
+use crate::ffi::{self, Midend, Preset};
 use std::ffi::{c_int, c_void};
 
 /// What `dr->handle` points at, recovered by every drawing-API
@@ -25,25 +25,19 @@ pub struct Session<P> {
 }
 
 impl<P> Session<P> {
-    /// Starts a game of the puzzle `game` describes, with `drapi` as
-    /// the mid-end's drawing API.
-    ///
-    /// # Safety
-    ///
-    /// Both pointers must stay valid for as long as the session lives,
-    /// since the mid-end keeps them.
-    pub unsafe fn new(game: *const RawGame, drapi: *const RawDrawingApi) -> Session<P> {
+    /// Starts a game of the puzzle this binary is built with.
+    pub fn start() -> Session<P> {
         let mut handle = Box::new(DrawHandle::default());
         let handle_ptr = &mut *handle as *mut DrawHandle<P> as *mut c_void;
 
-        let midend = unsafe { Midend::new(game, drapi, handle_ptr) };
+        let midend = unsafe { Midend::new(&ffi::THEGAME, &ffi::TERMINAL_DRAWING_API, handle_ptr) };
         midend.new_game();
         midend.redraw();
 
         Session { midend, handle }
     }
 
-    /// The puzzle state as of the most recent `new()`/`process_key()`.
+    /// The puzzle state as of the most recent `start()`/`process_key()`.
     pub fn puzzle(&self) -> &P {
         self.handle.puzzle.as_ref().expect("emit_state was not called")
     }
