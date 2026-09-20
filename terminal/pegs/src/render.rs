@@ -42,3 +42,68 @@ fn draw_cursor(canvas: &mut Canvas, cursor: Cursor) {
 
     draw_rect_outline(canvas, tile_rect(cursor.position), Weight::Heavy);
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use common::board::{Board, GridDimensions, left_side};
+    use common::canvas::Size;
+
+    /// A cross of three tiles, a peg either side of the hole in the
+    /// middle, with the corners off the board.
+    fn puzzle(cursor: Cursor) -> PegsPuzzle {
+        let row = |tiles: [Tile; 3]| tiles.to_vec();
+
+        PegsPuzzle {
+            tiles: vec![
+                row([Tile::Obstacle, Tile::Peg, Tile::Obstacle]),
+                row([Tile::Peg, Tile::Hole, Tile::Peg]),
+                row([Tile::Obstacle, Tile::Peg, Tile::Obstacle]),
+            ],
+            cursor,
+        }
+    }
+
+    /// A cursor that isn't shown, so nothing draws it.
+    fn hidden_cursor() -> Cursor {
+        Cursor { position: (1, 1), visible: false, jumping: false }
+    }
+
+    fn canvas(dimensions: GridDimensions) -> Canvas {
+        Canvas::new(Board::new(dimensions, false).rect(), Size::new(0, 0))
+    }
+
+    #[test]
+    fn pegs_and_holes_are_drawn_at_tile_centres() {
+        let mut canvas = canvas((3, 3));
+        draw_board(&mut canvas, &puzzle(hidden_cursor()));
+
+        assert_eq!(canvas.char_at(center_mid((1, 0))), PEG);
+        assert_eq!(canvas.char_at(center_mid((1, 1))), HOLE);
+        // A tile off the board holds nothing to draw.
+        assert_eq!(canvas.char_at(center_mid((0, 0))), ' ');
+    }
+
+    #[test]
+    fn only_the_picked_up_peg_is_drawn_lifted() {
+        let jumping = Cursor { position: (1, 0), visible: true, jumping: true };
+        let mut canvas = canvas((3, 3));
+        draw_board(&mut canvas, &puzzle(jumping));
+
+        assert_eq!(canvas.char_at(center_mid((1, 0))), PICKED_UP_PEG);
+        assert_eq!(canvas.char_at(center_mid((0, 1))), PEG);
+    }
+
+    #[test]
+    fn the_cursor_boxes_its_tile_only_while_it_is_shown() {
+        let shown = Cursor { position: (1, 1), visible: true, jumping: false };
+        let mut boxed = canvas((3, 3));
+        let mut plain = canvas((3, 3));
+
+        draw_board(&mut boxed, &puzzle(shown));
+        draw_board(&mut plain, &puzzle(hidden_cursor()));
+
+        assert_eq!(boxed.char_at(left_side((1, 1))), '┃');
+        assert_ne!(plain.char_at(left_side((1, 1))), '┃');
+    }
+}
