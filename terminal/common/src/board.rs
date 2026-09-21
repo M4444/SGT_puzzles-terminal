@@ -232,16 +232,20 @@ pub fn bottom_border_middle(tile: TileCoord) -> impl Iterator<Item = Coord> {
 }
 
 /// The board consists of the frame enclosing the grid and the status
-/// bar on the row beneath it, for a game that wants one.
+/// bar on the rows beneath it, for a game that wants one.
 #[derive(Clone, Copy)]
 pub struct Board {
     pub frame: Rect,
     /// Where the status bar starts, or `None` for a game without one.
     pub status_bar_start: Option<Coord>,
+    /// How many rows its status takes, once wrapped to the frame's width.
+    status_bar_height: usize,
 }
 
 impl Board {
-    pub fn new((width, height): GridDimensions, wants_status_bar: bool) -> Board {
+    /// Lays out a board for a grid of the given size, with `status` as
+    /// the text under it, or `None` for a game without a status bar.
+    pub fn new((width, height): GridDimensions, status: Option<&str>) -> Board {
         assert!(width > 0 && height > 0, "Board::new() called with a zero-tile board");
 
         let grid = Rect::from_corners(top_left((0, 0)), bottom_right((width - 1, height - 1)));
@@ -252,20 +256,63 @@ impl Board {
             Coord::new(grid.left() - FRAME_MARGIN_X - 1, grid.top() - FRAME_MARGIN_Y - 1),
             Coord::new(grid.right() + FRAME_MARGIN_X + 1, grid.bottom() + FRAME_MARGIN_Y + 1),
         );
-        let status_bar_start =
-            wants_status_bar.then(|| Coord::new(frame.left(), frame.bottom() + 1));
 
-        Board { frame, status_bar_start }
+        let status_bar_start =
+            status.is_some().then(|| Coord::new(frame.left(), frame.bottom() + 1));
+        let status_bar_height = status.map_or(0, |text| status_lines(text, frame.width()).len());
+
+        Board { frame, status_bar_start, status_bar_height }
     }
 
-    /// The whole board, from the frame's top left to the end of the
-    /// status bar's row, or to the frame's bottom right without one.
+    /// The whole board, from the frame's top left to the last row of
+    /// the status bar, or to the frame's bottom right without one.
     pub fn rect(self) -> Rect {
         let top_left = Coord::new(self.frame.left(), self.frame.top());
-        let bottom = self.status_bar_start.map_or(self.frame.bottom(), |start| start.y);
+        let bottom = self
+            .status_bar_start
+            .map_or(self.frame.bottom(), |start| start.y + self.status_bar_height - 1);
         let bottom_right = Coord::new(self.frame.right(), bottom);
         Rect::from_corners(top_left, bottom_right)
     }
+}
+
+/// Splits `status` into lines no wider than `width`, breaking between
+/// words where it can and inside a word that doesn't fit on its own.
+/// A status with no text at all gives no lines.
+fn status_lines(status: &str, width: usize) -> Vec<String> {
+    if status.is_empty() {
+        return Vec::new();
+    }
+
+    let mut lines = Vec::new();
+    let mut line = String::new();
+
+    for word in status.split_whitespace() {
+        for part in word_parts(word, width) {
+            let separator = if line.is_empty() { "" } else { " " };
+
+            if line.chars().count() + separator.len() + part.chars().count() <= width {
+                line.push_str(separator);
+            } else {
+                // Finishes this line, leaving an empty one to write on.
+                lines.push(std::mem::take(&mut line));
+            }
+
+            line.push_str(&part);
+        }
+    }
+
+    lines.push(line);
+    lines
+}
+
+/// Cuts a word too long for `width` into pieces that fit on a line.
+fn word_parts(word: &str, width: usize) -> Vec<String> {
+    word.chars()
+        .collect::<Vec<char>>()
+        .chunks(width.max(1))
+        .map(|part| part.iter().collect())
+        .collect()
 }
 
 /// Draws the fixed tile borders between cells, independent of any wire.
@@ -326,8 +373,14 @@ pub fn draw_frame(canvas: &mut Canvas, frame: Rect) {
     draw_rect_outline(canvas, frame, FRAME_WEIGHT);
 }
 
-pub fn draw_status_bar(canvas: &mut Canvas, start: Coord, status: &str) {
-    canvas.draw_text(start, status);
+pub fn draw_status_bar(canvas: &mut Canvas, board: Board, status: &str) {
+    let Some(start) = board.status_bar_start else {
+        return;
+    };
+
+    for (row, line) in status_lines(status, board.frame.width()).iter().enumerate() {
+        canvas.draw_text(Coord::new(start.x, start.y + row), line);
+    }
 }
 
 #[cfg(test)]
@@ -360,19 +413,42 @@ mod tests {
     #[test]
     #[should_panic(expected = "Board::new() called with a zero-tile board")]
     fn board_new_panics_on_zero_tile_board() {
-        Board::new((0, 0), true);
+        Board::new((0, 0), Some(""));
     }
 
     /// A board with a status bar ends on the status bar's row, one below
     /// the frame. A board without one ends on the frame.
     #[test]
     fn board_rect_ends_on_the_status_bar_only_when_there_is_one() {
-        let with_status_bar = Board::new((2, 2), true);
-        let without_status_bar = Board::new((2, 2), false);
+        let with_status_bar = Board::new((2, 2), Some("Moves: 0"));
+        let without_status_bar = Board::new((2, 2), None);
 
         assert_eq!(with_status_bar.rect().bottom(), with_status_bar.frame.bottom() + 1);
         assert_eq!(without_status_bar.rect().bottom(), without_status_bar.frame.bottom());
         assert!(without_status_bar.status_bar_start.is_none());
+    }
+
+    /// A 2x2 grid's frame is 13 columns wide, so this status takes two
+    /// rows and the board grows by one to hold them.
+    #[test]
+    fn status_too_wide_for_the_frame_takes_another_row() {
+        let status = "COMPLETED! Moves: 20";
+        let board = Board::new((2, 2), Some(status));
+        let start = board.status_bar_start.expect("a status bar");
+        let mut canvas = Canvas::new(board.rect(), Size::new(0, 0));
+
+        draw_status_bar(&mut canvas, board, status);
+
+        assert_eq!(board.rect().bottom(), board.frame.bottom() + 2);
+        assert_eq!(canvas.char_at(start), 'C');
+        assert_eq!(canvas.char_at(Coord::new(start.x, start.y + 1)), 'M');
+    }
+
+    /// A word too wide to fit is cut where the line ends, since leaving
+    /// it whole would run into the menu beside the board.
+    #[test]
+    fn status_word_wider_than_the_frame_is_cut() {
+        assert_eq!(status_lines("abcdefgh", 3), ["abc", "def", "gh"]);
     }
 
     /// An L of three tiles on the board in a 2x2 grid. The border the two
@@ -381,7 +457,7 @@ mod tests {
     #[test]
     fn draw_irregular_grid_outline_skips_borders_between_tiles() {
         let grid = vec![vec![true, true], vec![true, false]];
-        let mut canvas = Canvas::new(Board::new((2, 2), false).rect(), Size::new(0, 0));
+        let mut canvas = Canvas::new(Board::new((2, 2), None).rect(), Size::new(0, 0));
 
         draw_irregular_grid_outline(&mut canvas, &grid, |&is_on_board| is_on_board);
 

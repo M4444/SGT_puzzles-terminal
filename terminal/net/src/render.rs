@@ -336,7 +336,7 @@ mod tests {
     /// the space the menu takes up, so it is built without presets.
     fn canvas(dimensions: GridDimensions) -> Canvas {
         Canvas::new(
-            Board::new(dimensions, true).rect(),
+            Board::new(dimensions, Some("Active: 1/25")).rect(),
             Menu::new(net::tab_specs(&[], true)).size(),
         )
     }

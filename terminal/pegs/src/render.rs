@@ -70,7 +70,7 @@ mod tests {
     }
 
     fn canvas(dimensions: GridDimensions) -> Canvas {
-        Canvas::new(Board::new(dimensions, false).rect(), Size::new(0, 0))
+        Canvas::new(Board::new(dimensions, None).rect(), Size::new(0, 0))
     }
 
     #[test]

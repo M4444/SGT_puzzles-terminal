@@ -201,6 +201,10 @@ impl Rect {
         )
     }
 
+    pub fn width(self) -> usize {
+        self.size.width
+    }
+
     pub fn left(self) -> usize {
         self.top_left.x
     }

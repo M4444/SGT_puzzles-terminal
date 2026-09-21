@@ -80,7 +80,7 @@ impl<T: TerminalGame> Frontend<T> {
 /// it, then prints it. A game uses this while its state is still
 /// hardcoded.
 pub fn preview<T: TerminalGame>(game: T, puzzle: &T::Puzzle) {
-    let board = Board::new(puzzle.dimensions(), false);
+    let board = Board::new(puzzle.dimensions(), None);
     let mut canvas = Canvas::new(board.rect(), Size::new(0, 0));
 
     game.draw_board(&mut canvas, puzzle);
@@ -101,7 +101,8 @@ fn render_game<T: TerminalGame>(
     menu: &mut Menu<T::Action>,
     terminal_columns: usize,
 ) -> String {
-    let board = Board::new(puzzle.dimensions(), wants_status_bar);
+    let status = wants_status_bar.then(|| T::status(puzzle));
+    let board = Board::new(puzzle.dimensions(), status);
     let board_rect = board.rect();
     let mut canvas = Canvas::new(board_rect, menu.size());
 
@@ -110,8 +111,8 @@ fn render_game<T: TerminalGame>(
     if !menu.has_focus() {
         draw_frame(&mut canvas, board.frame);
     }
-    if let Some(start) = board.status_bar_start {
-        draw_status_bar(&mut canvas, start, T::status(puzzle));
+    if let Some(text) = status {
+        draw_status_bar(&mut canvas, board, text);
     }
 
     menu.set_placement(board_rect, terminal_columns);

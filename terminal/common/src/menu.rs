@@ -740,7 +740,7 @@ mod tests {
         // Menu Controls' header, opened so a legend is drawn too.
         menu.click((3, 5));
 
-        let board_rect = Board::new((5, 5), true).rect();
+        let board_rect = Board::new((5, 5), Some("Moves: 0")).rect();
         let mut canvas = Canvas::new(board_rect, menu.size());
         menu.set_placement(board_rect, usize::MAX);
         menu.draw(&mut canvas, MenuState::default(), |_| false);
@@ -761,7 +761,7 @@ mod tests {
     #[test]
     fn headers_stop_at_the_terminal_edge() {
         let mut menu = menu();
-        let board_rect = Board::new((5, 5), true).rect();
+        let board_rect = Board::new((5, 5), Some("Moves: 0")).rect();
         let mut canvas = Canvas::new(board_rect, menu.size());
 
         // Type's header would run to column 84 in a terminal wide
@@ -780,7 +780,7 @@ mod tests {
         let dim = SetAttribute(Attribute::Dim).to_string();
         let draw = |menu_state| {
             let mut menu = menu();
-            let board_rect = Board::new((5, 5), true).rect();
+            let board_rect = Board::new((5, 5), Some("Moves: 0")).rect();
             let mut canvas = Canvas::new(board_rect, menu.size());
 
             menu.set_placement(board_rect, usize::MAX);
