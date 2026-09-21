@@ -13,6 +13,8 @@ use crossterm::execute;
 use crossterm::terminal::{self, Clear, ClearType, disable_raw_mode, enable_raw_mode};
 use std::ffi::c_int;
 use std::io::{Write, stdout};
+use std::panic;
+use std::thread;
 
 /// A game's own tabs, board drawing, menu actions and board clicks.
 /// The type that implements it holds any settings only that game has.
@@ -121,16 +123,37 @@ fn render_game<T: TerminalGame>(
     flatten_to_lines(&canvas, terminal_columns).join("\n")
 }
 
+/// Gives the terminal back the settings the game took over.
+fn restore_terminal() {
+    execute!(stdout(), DisableMouseCapture, Show).ok();
+    disable_raw_mode().ok();
+    stdout().flush().ok();
+}
+
+/// Sets a hook that restores the terminal before a panic's message is
+/// printed, which happens before unwinding reaches the guard below.
+fn set_panic_hook() {
+    let previous_hook = panic::take_hook();
+
+    panic::set_hook(Box::new(move |panic_info| {
+        restore_terminal();
+        previous_hook(panic_info);
+    }));
+}
+
 /// Restores the terminal on the way out, including on panic.
 struct TerminalGuard;
 
 impl Drop for TerminalGuard {
     fn drop(&mut self) {
-        execute!(stdout(), DisableMouseCapture, Show).ok();
-        disable_raw_mode().ok();
-        // Puts the shell's prompt on a fresh line.
-        print!("\r\n");
-        stdout().flush().ok();
+        restore_terminal();
+
+        // Puts the shell's prompt on a fresh line. A panic's message
+        // ends with one of its own, so it needs no help.
+        if !thread::panicking() {
+            print!("\r\n");
+            stdout().flush().ok();
+        }
     }
 }
 
@@ -141,6 +164,7 @@ pub fn run<T: TerminalGame>(game: T) {
     let menu = Menu::new(T::tab_specs(&session.presets(), session.can_solve()));
     let mut frontend = Frontend { game, session, menu };
 
+    set_panic_hook();
     enable_raw_mode().expect("failed to enable raw mode");
     execute!(stdout(), EnableMouseCapture, Hide).ok();
     let _guard = TerminalGuard;
