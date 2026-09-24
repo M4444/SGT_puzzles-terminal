@@ -156,6 +156,12 @@ impl Coord {
     pub fn shifted_by(self, offset: Coord) -> Coord {
         Coord::new(self.x + offset.x, self.y + offset.y)
     }
+
+    /// Where this coord sits with respect to `origin`. A coord left of
+    /// or above the origin has no such place, so it gives `None`.
+    pub fn relative_to(self, origin: Coord) -> Option<Coord> {
+        Some(Coord::new(self.x.checked_sub(origin.x)?, self.y.checked_sub(origin.y)?))
+    }
 }
 
 impl From<(usize, usize)> for Coord {

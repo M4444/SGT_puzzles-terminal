@@ -10,10 +10,10 @@ use crate::session::Session;
 pub struct Menu<G> {
     tabs: Vec<Tab<G>>,
     size: Size,
-    /// Where the menu sits on screen. Its headers, buttons and legends
-    /// are laid out from (0, 0) and shifted by this position to be drawn
-    /// or clicked.
-    top_left: Coord,
+    /// Where the menu's top left corner sits on screen. Its headers,
+    /// buttons and legends are laid out from (0, 0) and shifted by this
+    /// position to be drawn or clicked.
+    origin: Coord,
     divider_length: usize,
     /// How wide the terminal is. Headers stop at its edge.
     terminal_columns: usize,
@@ -41,7 +41,7 @@ impl<G: Copy> Menu<G> {
         let mut menu = Menu {
             tabs,
             size: Size::new(0, 0),
-            top_left: Coord::new(0, 0),
+            origin: Coord::new(0, 0),
             divider_length: 0,
             terminal_columns: usize::MAX,
             focus: None,
@@ -78,7 +78,7 @@ impl<G: Copy> Menu<G> {
     /// top, with its divider running the board's full height and its
     /// headers stopping at the terminal's edge.
     pub fn set_placement(&mut self, board_rect: Rect, terminal_columns: usize) {
-        self.top_left = Coord::new(board_rect.right() + 1, board_rect.top());
+        self.origin = Coord::new(board_rect.right() + 1, board_rect.top());
         self.divider_length = board_rect.bottom() - board_rect.top() + 1;
         self.terminal_columns = terminal_columns;
     }
@@ -92,7 +92,7 @@ impl<G: Copy> Menu<G> {
         menu_state: MenuState,
         is_game_action_current: impl Fn(G) -> bool,
     ) {
-        let offset = self.top_left;
+        let offset = self.origin;
 
         draw_divider(canvas, offset, self.divider_length);
 
@@ -121,12 +121,8 @@ impl<G: Copy> Menu<G> {
     /// tab and returns no action. A button returns its own, dimmed or
     /// not, since the mid-end ignores an action it can't take.
     pub fn click(&mut self, position: impl Into<Coord>) -> Option<Action<G>> {
-        let position = position.into();
-        // A click left of or above the menu can't land on it.
-        let position = Coord::new(
-            position.x.checked_sub(self.top_left.x)?,
-            position.y.checked_sub(self.top_left.y)?,
-        );
+        let position = position.into().relative_to(self.origin)?;
+
         let header_hit = self.tabs.iter().position(|tab| {
             tab.header
                 .as_ref()
