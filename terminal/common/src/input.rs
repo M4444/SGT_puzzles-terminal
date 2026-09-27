@@ -1,6 +1,7 @@
 //! Turning key presses and mouse clicks into menu actions and the
 //! mid-end's key codes.
 
+use crate::board::Board;
 use crate::canvas::Coord;
 use crate::menu;
 use crate::session::Session;
@@ -54,11 +55,12 @@ fn key_code(key: KeyEvent) -> Option<c_int> {
 }
 
 /// Takes one key press or mouse event and ignores any other kind. The
-/// game's own menu actions go to `take_game_action`. A click the menu
-/// doesn't claim goes to `click_board`. Returns `false` if it signalled
+/// game's own menu actions go to `take_game_action`. A click on the
+/// board's grid goes to `click_board`. Returns `false` if it signalled
 /// quit.
 pub(crate) fn take_event<P, G: Copy>(
     event: Event,
+    board: Option<&Board>,
     menu: &mut menu::Menu<G>,
     session: &mut Session<P>,
     take_game_action: impl FnOnce(G),
@@ -66,7 +68,9 @@ pub(crate) fn take_event<P, G: Copy>(
 ) -> bool {
     match event {
         Event::Key(key) => take_key(key, menu, session, take_game_action),
-        Event::Mouse(mouse) => take_click(mouse, menu, session, take_game_action, click_board),
+        Event::Mouse(mouse) => {
+            take_click(mouse, board, menu, session, take_game_action, click_board)
+        }
         _ => true,
     }
 }
@@ -118,10 +122,11 @@ fn take_key<P, G: Copy>(
 }
 
 /// Takes one mouse button press. A left click goes to the menu first,
-/// and anything the menu doesn't claim falls through to the board.
-/// Returns `false` if it signalled quit.
+/// and a click on the grid goes to the board. One that landed on
+/// neither does nothing. Returns `false` if it signalled quit.
 fn take_click<P, G: Copy>(
     mouse: MouseEvent,
+    board: Option<&Board>,
     menu: &mut menu::Menu<G>,
     session: &mut Session<P>,
     take_game_action: impl FnOnce(G),
@@ -143,7 +148,13 @@ fn take_click<P, G: Copy>(
         return take_action(action, session, take_game_action);
     }
 
-    click_board(session, position, button)
+    // Everything else on screen, the menu included, is the frame, the
+    // status bar or the space around them.
+    if board.is_some_and(|board| board.grid.contains(position)) {
+        return click_board(session, position, button);
+    }
+
+    true
 }
 
 /// Carries out a menu action. Returns `false` if it signalled quit.

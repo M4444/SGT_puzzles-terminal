@@ -233,13 +233,15 @@ pub fn bottom_border_middle(tile: TileCoord) -> impl Iterator<Item = Coord> {
 
 /// The board consists of the frame enclosing the grid and the status
 /// bar on the rows beneath it, for a game that wants one.
-#[derive(Clone, Copy)]
 pub struct Board {
+    /// Where the grid of tiles sits, which is the only place a click
+    /// reaches the game.
+    pub grid: Rect,
     pub frame: Rect,
     /// Where the status bar starts, or `None` for a game without one.
     pub status_bar_start: Option<Coord>,
-    /// How many rows its status takes, once wrapped to the frame's width.
-    status_bar_height: usize,
+    /// Its status, wrapped to the frame's width, a row to a line.
+    status: Vec<String>,
 }
 
 impl Board {
@@ -259,18 +261,18 @@ impl Board {
 
         let status_bar_start =
             status.is_some().then(|| Coord::new(frame.left(), frame.bottom() + 1));
-        let status_bar_height = status.map_or(0, |text| status_lines(text, frame.width()).len());
+        let status = status.map_or(Vec::new(), |text| status_lines(text, frame.width()));
 
-        Board { frame, status_bar_start, status_bar_height }
+        Board { grid, frame, status_bar_start, status }
     }
 
     /// The whole board, from the frame's top left to the last row of
     /// the status bar, or to the frame's bottom right without one.
-    pub fn rect(self) -> Rect {
+    pub fn rect(&self) -> Rect {
         let top_left = Coord::new(self.frame.left(), self.frame.top());
         let bottom = self
             .status_bar_start
-            .map_or(self.frame.bottom(), |start| start.y + self.status_bar_height - 1);
+            .map_or(self.frame.bottom(), |start| start.y + self.status.len() - 1);
         let bottom_right = Coord::new(self.frame.right(), bottom);
         Rect::from_corners(top_left, bottom_right)
     }
@@ -373,12 +375,12 @@ pub fn draw_frame(canvas: &mut Canvas, frame: Rect) {
     draw_rect_outline(canvas, frame, FRAME_WEIGHT);
 }
 
-pub fn draw_status_bar(canvas: &mut Canvas, board: Board, status: &str) {
+pub fn draw_status_bar(canvas: &mut Canvas, board: &Board) {
     let Some(start) = board.status_bar_start else {
         return;
     };
 
-    for (row, line) in status_lines(status, board.frame.width()).iter().enumerate() {
+    for (row, line) in board.status.iter().enumerate() {
         canvas.draw_text(Coord::new(start.x, start.y + row), line);
     }
 }
@@ -437,7 +439,7 @@ mod tests {
         let start = board.status_bar_start.expect("a status bar");
         let mut canvas = Canvas::new(board.rect(), Size::new(0, 0));
 
-        draw_status_bar(&mut canvas, board, status);
+        draw_status_bar(&mut canvas, &board);
 
         assert_eq!(board.rect().bottom(), board.frame.bottom() + 2);
         assert_eq!(canvas.char_at(start), 'C');

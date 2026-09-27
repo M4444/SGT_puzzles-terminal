@@ -42,25 +42,34 @@ pub trait TerminalGame {
     /// Carries out one of the game's own menu actions.
     fn take_action(&mut self, action: Self::Action);
 
-    /// Takes a click the menu didn't claim. Returns `false` if it
-    /// signalled quit.
+    /// Takes a click on the grid. Returns `false` if it signalled quit.
     fn click_board(session: &mut Session<Self::Puzzle>, position: Coord, button: c_int) -> bool;
 }
 
 /// The front end's own state. It owns the game being played, its
-/// session and its menu.
+/// session, its menu and the board they are drawn on.
 struct Frontend<T: TerminalGame> {
     game: T,
     session: Session<T::Puzzle>,
+    /// The board as it was last drawn, or `None` before the first draw.
+    board: Option<Board>,
     menu: Menu<T::Action>,
 }
 
 impl<T: TerminalGame> Frontend<T> {
     fn render(&mut self, terminal_columns: usize) -> String {
+        let status = self
+            .session
+            .wants_status_bar()
+            .then(|| T::status(self.session.puzzle()));
+        let board = self
+            .board
+            .insert(Board::new(self.session.puzzle().dimensions(), status));
+
         render_game(
             &self.game,
             self.session.puzzle(),
-            self.session.wants_status_bar(),
+            board,
             MenuState::new(&self.session),
             &mut self.menu,
             terminal_columns,
@@ -70,6 +79,7 @@ impl<T: TerminalGame> Frontend<T> {
     fn take_event(&mut self, event: Event) -> bool {
         input::take_event(
             event,
+            self.board.as_ref(),
             &mut self.menu,
             &mut self.session,
             |action| self.game.take_action(action),
@@ -98,13 +108,11 @@ pub fn preview<T: TerminalGame>(game: T, puzzle: &T::Puzzle) {
 fn render_game<T: TerminalGame>(
     game: &T,
     puzzle: &T::Puzzle,
-    wants_status_bar: bool,
+    board: &Board,
     menu_state: MenuState,
     menu: &mut Menu<T::Action>,
     terminal_columns: usize,
 ) -> String {
-    let status = wants_status_bar.then(|| T::status(puzzle));
-    let board = Board::new(puzzle.dimensions(), status);
     let board_rect = board.rect();
     let mut canvas = Canvas::new(board_rect, menu.size());
 
@@ -113,9 +121,7 @@ fn render_game<T: TerminalGame>(
     if !menu.has_focus() {
         draw_frame(&mut canvas, board.frame);
     }
-    if let Some(text) = status {
-        draw_status_bar(&mut canvas, board, text);
-    }
+    draw_status_bar(&mut canvas, board);
 
     menu.set_placement(board_rect, terminal_columns);
     menu.draw(&mut canvas, menu_state, |action| game.is_action_current(action));
@@ -162,7 +168,7 @@ impl Drop for TerminalGuard {
 pub fn run<T: TerminalGame>(game: T) {
     let session = Session::start();
     let menu = Menu::new(T::tab_specs(&session.presets(), session.can_solve()));
-    let mut frontend = Frontend { game, session, menu };
+    let mut frontend = Frontend { game, session, board: None, menu };
 
     set_panic_hook();
     enable_raw_mode().expect("failed to enable raw mode");
