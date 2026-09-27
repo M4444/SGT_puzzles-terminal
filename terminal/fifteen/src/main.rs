@@ -1,4 +1,4 @@
-//! Draws a hardcoded Fifteen board for the terminal.
+//! Plays Fifteen in the terminal.
 
 mod fifteen;
 mod render;
@@ -18,12 +18,16 @@ impl TerminalGame for Fifteen {
     type Puzzle = FifteenPuzzle;
     type Action = FifteenAction;
 
-    fn tab_specs(_presets: &[Preset], _can_solve: bool) -> Vec<TabSpec<FifteenAction>> {
-        todo!()
+    fn tab_specs(presets: &[Preset], can_solve: bool) -> Vec<TabSpec<FifteenAction>> {
+        fifteen::tab_specs(presets, can_solve)
     }
 
     fn draw_board(&self, canvas: &mut Canvas, puzzle: &FifteenPuzzle) {
         render::draw_board(canvas, puzzle);
+    }
+
+    fn status(puzzle: &FifteenPuzzle) -> &str {
+        &puzzle.status
     }
 
     fn is_action_current(&self, action: FifteenAction) -> bool {
@@ -34,15 +38,16 @@ impl TerminalGame for Fifteen {
         match action {}
     }
 
+    /// Clicks on the board do nothing.
     fn click_board(
         _session: &mut Session<FifteenPuzzle>,
         _position: Coord,
         _button: c_int,
     ) -> bool {
-        todo!()
+        true
     }
 }
 
 fn main() {
-    common::terminal::preview(Fifteen, &fifteen::hardcoded_game());
+    common::terminal::run(Fifteen);
 }

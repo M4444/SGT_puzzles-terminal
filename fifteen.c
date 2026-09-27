@@ -949,12 +949,36 @@ static void draw_tile(drawing *dr, game_drawstate *ds, const game_state *state,
     draw_update(dr, x, y, TILE_SIZE, TILE_SIZE);
 }
 
+#ifdef EXPOSE_GAME_STATE
+/*
+ * What Fifteen hands to a front end asking for the game data itself,
+ * through the drawing API's emit_state(). A tile holds its number,
+ * and the gap holds zero.
+ */
+struct live_state {
+    const int *tiles;
+    int width, height;
+};
+#endif
+
 static void game_redraw(drawing *dr, game_drawstate *ds,
                         const game_state *oldstate, const game_state *state,
                         int dir, const game_ui *ui,
                         float animtime, float flashtime)
 {
     int i, pass, bgcolour;
+
+#ifdef EXPOSE_GAME_STATE
+    {
+        struct live_state data = {
+            .tiles = state->tiles,
+            .width = state->w,
+            .height = state->h,
+        };
+
+        dr->api->emit_state(dr, &data);
+    }
+#endif
 
     if (flashtime > 0) {
         int frame = (int)(flashtime / FLASH_FRAME);
