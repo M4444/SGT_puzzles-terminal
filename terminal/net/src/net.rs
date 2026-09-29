@@ -17,15 +17,15 @@ pub(crate) struct Wires {
     pub down: bool,
 }
 
-/// Bit flags within a direction nibble, matching net.c's `R`/`U`/`L`/`D`
-/// `#define`s.
+/// Bit flags within a direction nibble,
+/// matching net.c's `R`/`U`/`L`/`D` `#define`s.
 const RIGHT: u8 = 0x1;
 const UP: u8 = 0x2;
 const LEFT: u8 = 0x4;
 const DOWN: u8 = 0x8;
 
-/// Bit flag within a tile's byte marking it locked, matching net.c's
-/// `LOCKED` `#define`.
+/// Bit flag within a tile's byte marking it locked,
+/// matching net.c's `LOCKED` `#define`.
 const LOCKED_BIT: u8 = 0x10;
 
 impl Wires {
@@ -153,8 +153,8 @@ extern "C" fn rust_emit_state(dr: *mut RawDrawing, data: *const RawLiveState) {
     });
 }
 
-/// Called from net.c's `status_bar`, right after `rust_emit_state` within
-/// the same `game_redraw`.
+/// Called from net.c's `status_bar`, right after `rust_emit_state`
+/// within the same `game_redraw`.
 #[unsafe(no_mangle)]
 extern "C" fn rust_status_bar(dr: *mut RawDrawing, text: *const c_char) {
     let handle = unsafe { &mut *((*dr).handle as *mut DrawHandle<NetPuzzle>) };

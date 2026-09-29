@@ -19,9 +19,9 @@ pub(crate) struct RawDrawingApi {
     _private: [u8; 0],
 }
 
-/// Mirrors `struct drawing` (`api`/`handle`, `puzzles.h`), so a callback
-/// reached through a `drawing_api` function pointer can recover its own
-/// `handle`.
+/// Mirrors `struct drawing` (`api`/`handle`, `puzzles.h`), so a
+/// callback reached through a `drawing_api` function pointer can
+/// recover its own `handle`.
 #[repr(C)]
 pub struct RawDrawing {
     api: *const RawDrawingApi,
@@ -139,10 +139,10 @@ impl Midend {
     /// Settles the mid-end on the backend's own preferred tile size
     /// (its `PREFERRED_TILE_SIZE`), so `tilesize()` returns a real,
     /// known value instead of `0`. Passing `c_int::MAX` guarantees the
-    /// preferred size always fits, since `midend_size` shrinks its result
-    /// to fit the given space unless that space is already big enough not
-    /// to matter. Must run after `new_game`. It writes into the
-    /// mid-end's drawstate, which doesn't exist until a game does.
+    /// preferred size always fits, since `midend_size` shrinks its
+    /// result to fit the given space unless that space is already big
+    /// enough not to matter. Must run after `new_game`. It writes into
+    /// the mid-end's drawstate, which doesn't exist until a game does.
     fn fix_tilesize(&self) {
         let mut x = c_int::MAX;
         let mut y = c_int::MAX;
@@ -150,8 +150,9 @@ impl Midend {
         unsafe { midend_size(self.raw.as_ptr(), &mut x, &mut y, false, 1.0) };
     }
 
-    /// The tile size settled on by `fix_tilesize`, needed to convert a
-    /// tile position into the pixel coordinates `process_click` expects.
+    /// The tile size settled on by `fix_tilesize`,
+    /// needed to convert a tile position into the pixel
+    /// coordinates `process_click` expects.
     pub fn tilesize(&self) -> c_int {
         unsafe { midend_tilesize(self.raw.as_ptr()) }
     }

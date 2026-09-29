@@ -37,7 +37,8 @@ impl<P> Session<P> {
         Session { midend, handle }
     }
 
-    /// The puzzle state as of the most recent `start()`/`process_key()`.
+    /// The puzzle state as of the most
+    /// recent `start()`/`process_key()`.
     pub fn puzzle(&self) -> &P {
         self.handle.puzzle.as_ref().expect("emit_state was not called")
     }

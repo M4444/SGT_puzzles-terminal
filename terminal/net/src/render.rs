@@ -22,8 +22,8 @@ pub(crate) fn draw_board(canvas: &mut Canvas, puzzle: &NetPuzzle, styles: Styles
     draw_cursor(canvas, puzzle.cursor, styles.cursor);
 }
 
-/// Transforms a puzzle's tiles, source, and cursor from game coordinates
-/// into their position relative to the current origin.
+/// Transforms a puzzle's tiles, source, and cursor from game
+/// coordinates into their position relative to the current origin.
 /// Returns the puzzle unchanged if the origin is `(0, 0)`.
 fn puzzle_relative_to_origin(puzzle: &NetPuzzle) -> Cow<'_, NetPuzzle> {
     let origin = puzzle.origin;
@@ -89,7 +89,8 @@ const SOURCE_MARKER: [char; 3] = ['▐', '🬰', '▌']; // ▐🬰▌
 const POWERED_ENDPOINT_MARKER: [char; 3] = ['▐', '█', '▌']; // ▐█▌
 const UNPOWERED_ENDPOINT_MARKER: [char; 3] = ['⢸', '⣿', '⡇']; // ⢸⣿⡇
 
-/// Marks a tile's three center cells with three literal marker characters.
+/// Marks a tile's three center cells
+/// with three literal marker characters.
 fn mark_tile(canvas: &mut Canvas, tile_coord: TileCoord, marker: [char; 3]) {
     canvas.draw_char(center_left(tile_coord), marker[0]);
     canvas.draw_char(center_mid(tile_coord), marker[1]);
@@ -97,8 +98,8 @@ fn mark_tile(canvas: &mut Canvas, tile_coord: TileCoord, marker: [char; 3]) {
 }
 
 /// Draws the wires and endpoint markers on top of the grid lines, light
-/// where unpowered and heavy where carrying power. A tile with exactly one
-/// arm becomes an endpoint.
+/// where unpowered and heavy where carrying power. A tile with exactly
+/// one arm becomes an endpoint.
 fn draw_wires_and_endpoints(canvas: &mut Canvas, tiles: &Tiles) {
     for (tile_y, tile_row) in tiles.iter().enumerate() {
         for (tile_x, tile) in tile_row.iter().enumerate() {
@@ -198,9 +199,9 @@ pub(crate) enum LockStyle {
     /// Reverse video over the entire tile: all four of its borders and
     /// its content.
     ReverseTileFull,
-    /// Reverse video over the tile's content, plus each border whose far
-    /// side is either another locked tile or outside the grid, leaving
-    /// borders against an unlocked neighbour untouched.
+    /// Reverse video over the tile's content, plus each border whose
+    /// far side is either another locked tile or outside the grid,
+    /// leaving borders against an unlocked neighbour untouched.
     #[default]
     ReverseTileConnected,
 }
@@ -269,8 +270,8 @@ fn draw_locked_connections(canvas: &mut Canvas, tiles: &Tiles) {
     }
 }
 
-/// Reverses each junction shared by up to four tiles wherever every tile
-/// touching it is locked.
+/// Reverses each junction shared by up to four tiles wherever every
+/// tile touching it is locked.
 fn draw_locked_junctions(canvas: &mut Canvas, tiles: &Tiles) {
     let height = tiles.len();
     let width = tiles[0].len();
@@ -446,8 +447,8 @@ mod tests {
         assert!(!bottom_border_middle((1, 1)).any(|coord| canvas.is_reversed(coord)));
     }
 
-    /// Only a tile in the last column closes its right border against the
-    /// grid's edge.
+    /// Only a tile in the last column closes its right border against
+    /// the grid's edge.
     #[test]
     fn draw_locked_connected_reverses_border_against_the_right_edge() {
         let dimensions = (3, 3);
@@ -504,8 +505,8 @@ mod tests {
     }
 
     /// A tile's `right` barrier draws on the edge it names and nowhere
-    /// else. The two corners it doesn't touch stay the plain light cross
-    /// `draw_grid_lines` left there.
+    /// else. The two corners it doesn't touch stay the plain light
+    /// cross `draw_grid_lines` left there.
     #[test]
     fn draw_barriers_draws_on_the_named_edge_only() {
         let dimensions = (3, 3);
@@ -524,8 +525,8 @@ mod tests {
 
     /// A corner tile's two boundary barriers, `up` and `left`, both end
     /// at its top-left corner. That corner becomes a solid heavy angle,
-    /// and the opposite corner, which neither barrier reaches, stays the
-    /// plain light cross.
+    /// and the opposite corner, which neither barrier reaches, stays
+    /// the plain light cross.
     #[test]
     fn draw_barriers_combines_two_barriers_meeting_at_a_corner() {
         let dimensions = (3, 3);

@@ -71,17 +71,18 @@ impl TileCoordNeighbors for TileCoord {
 
 type Offset = (usize, usize);
 
-/// Gap between the grid lines and the frame: FRAME_MARGIN_X columns on each
-/// side, FRAME_MARGIN_Y rows above and below. Terminal character cells are
-/// taller than they are wide, so the vertical gap grows at half the rate of
-/// the horizontal one to look even.
+/// Gap between the grid lines and the frame: FRAME_MARGIN_X columns on
+/// each side, FRAME_MARGIN_Y rows above and below. Terminal character
+/// cells are taller than they are wide, so the vertical gap grows at
+/// half the rate of the horizontal one to look even.
 const FRAME_MARGIN_X: usize = 1;
 const FRAME_MARGIN_Y: usize = FRAME_MARGIN_X / 2;
 
 const GRID_OFFSET_X: usize = CANVAS_MARGIN_X + FRAME_MARGIN_X + 1;
 const GRID_OFFSET_Y: usize = CANVAS_MARGIN_Y + FRAME_MARGIN_Y + 1;
 
-/// Columns per tile: two shared border columns plus three center columns.
+/// Columns per tile: two shared border columns
+/// plus three center columns.
 const TILE_WIDTH: usize = 5;
 /// The columns inside a tile's borders, which its content is drawn
 /// across.
@@ -89,8 +90,8 @@ pub const TILE_CONTENT_WIDTH: usize = TILE_WIDTH - 2;
 /// Rows per tile: two shared border rows plus one center row.
 const TILE_HEIGHT: usize = 3;
 
-/// Addressing a tile's contents can be done relative to the tile. The tile
-/// is given as `(tile_x, tile_y)`, and the offset within it as a
+/// Addressing a tile's contents can be done relative to the tile. The
+/// tile is given as `(tile_x, tile_y)`, and the offset within it as a
 /// quarter-step `offset_x` across (0..TILE_WIDTH) and a half-step
 /// `offset_y` down (0..TILE_HEIGHT), overlapping by one step with each
 /// neighbouring tile to merge borders between them.
@@ -101,9 +102,9 @@ fn tile_offset_to_coord((tile_x, tile_y): TileCoord, (offset_x, offset_y): Offse
     Coord::new(x, y)
 }
 
-/// The inverse of `tile_offset_to_coord`: which tile a screen coordinate
-/// falls in, and its offset within that tile, or `None` if the
-/// coordinate is outside the grid entirely.
+/// The inverse of `tile_offset_to_coord`: which tile a screen
+/// coordinate falls in, and its offset within that tile, or `None` if
+/// the coordinate is outside the grid entirely.
 fn coord_to_tile_offset(
     coord: Coord,
     (width, height): GridDimensions,
@@ -215,7 +216,7 @@ pub fn tile_content_coords(tile: TileCoord) -> impl Iterator<Item = Coord> {
     tile_rect(tile).interior().coords()
 }
 
-/// The tile's entire footprint: all four of its borders and its content.
+/// The tile's entire footprint: its content and all four borders.
 pub fn tile_full_coords(tile: TileCoord) -> impl Iterator<Item = Coord> {
     tile_rect(tile).coords()
 }
@@ -418,8 +419,8 @@ mod tests {
         Board::new((0, 0), Some(""));
     }
 
-    /// A board with a status bar ends on the status bar's row, one below
-    /// the frame. A board without one ends on the frame.
+    /// A board with a status bar ends on the status bar's row, one
+    /// below the frame. A board without one ends on the frame.
     #[test]
     fn board_rect_ends_on_the_status_bar_only_when_there_is_one() {
         let with_status_bar = Board::new((2, 2), Some("Moves: 0"));
@@ -453,9 +454,10 @@ mod tests {
         assert_eq!(status_lines("abcdefgh", 3), ["abc", "def", "gh"]);
     }
 
-    /// An L of three tiles on the board in a 2x2 grid. The border the two
-    /// top tiles share stays blank and the outline turns a corner where
-    /// it steps in around the bottom right tile, which is off the board.
+    /// An L of three tiles on the board in a 2x2 grid.
+    /// The border the two top tiles share stays blank and
+    /// the outline turns a corner where it steps in around
+    /// the bottom right tile, which is off the board.
     #[test]
     fn draw_irregular_grid_outline_skips_borders_between_tiles() {
         let grid = vec![vec![true, true], vec![true, false]];

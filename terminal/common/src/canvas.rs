@@ -265,10 +265,10 @@ impl Rect {
 pub const CANVAS_MARGIN_X: usize = 0;
 pub const CANVAS_MARGIN_Y: usize = 0;
 
-/// One screen coordinate: either an accumulated `Code` segment (resolved to
-/// a box-drawing character via `glyph()`), or a literal marker character
-/// for content that isn't expressible as arm weights at all, like the
-/// endpoint/source boxes.
+/// One screen coordinate: either an accumulated `Code` segment
+/// (resolved to a box-drawing character via `glyph()`), or a literal
+/// marker character for content that isn't expressible as arm weights
+/// at all, like the endpoint/source boxes.
 #[derive(Clone, Copy)]
 enum Cell {
     Segment(Code),
@@ -378,8 +378,9 @@ impl Canvas {
         }
     }
 
-    /// Toggles reverse video at this position. Used only by the cursor,
-    /// where landing on an already-reversed locked tile cancels back to plain.
+    /// Toggles reverse video at this position.
+    /// Used only by the cursor, where landing on an already-reversed
+    /// locked tile cancels back to plain.
     fn toggle_reversed(&mut self, coord: impl Into<Coord>) {
         let coord = coord.into();
         let marks = &mut self.marks[coord.y][coord.x];
@@ -409,8 +410,8 @@ impl Canvas {
     }
 
     /// How strongly a position renders. A terminal has one intensity to
-    /// set, so where a position is both dim and bold, dim wins, since being
-    /// unavailable outranks having focus.
+    /// set, so where a position is both dim and bold, dim wins, since
+    /// being unavailable outranks having focus.
     fn intensity_at(&self, coord: impl Into<Coord>) -> Intensity {
         let coord = coord.into();
         let marks = self.marks[coord.y][coord.x];
@@ -425,11 +426,11 @@ impl Canvas {
     }
 }
 
-/// Draws a line of the given weight from `start` to `end`, inclusive, along
-/// whichever of column or row they share. The two ends don't need to be
-/// given in order. Each endpoint only gets the arm pointing back into
-/// the line, not the one pointing past it. Panics if `start` and `end` are
-/// neither on the same row nor the same column.
+/// Draws a line of the given weight from `start` to `end`, inclusive,
+/// along whichever of column or row they share. The two ends don't need
+/// to be given in order. Each endpoint only gets the arm pointing back
+/// into the line, not the one pointing past it. Panics if `start` and
+/// `end` are neither on the same row nor the same column.
 pub fn draw_line(
     canvas: &mut Canvas,
     start: impl Into<Coord>,
@@ -448,7 +449,8 @@ pub fn draw_line(
         std::mem::swap(&mut start.y, &mut end.y);
     }
 
-    // The line starts and ends in the middle of a cell, so each endpoint stops short of a full arm.
+    // The line starts and ends in the middle of a cell, so each endpoint
+    // stops short of a full arm.
     if start.y == end.y {
         for x in start.x..=end.x {
             let right = if x == end.x { Weight::None } else { weight };
@@ -609,8 +611,9 @@ mod tests {
         assert_eq!(canvas.char_at((1, 1)), ' ');
     }
 
-    /// A board 25 columns wide and a menu 60 wide make a canvas 85 wide.
-    /// The board is the taller of the two, so it sets the height.
+    /// A board 25 columns wide and a menu 60 wide
+    /// make a canvas 85 wide. The board is the taller
+    /// of the two, so it sets the height.
     #[test]
     fn canvas_new_computes_expected_size() {
         let board_rect = Rect::new(Coord::new(0, 0), Size::new(25, 14));

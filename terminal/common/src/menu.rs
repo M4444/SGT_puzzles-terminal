@@ -31,8 +31,8 @@ enum Focus {
 }
 
 impl<G: Copy> Menu<G> {
-    /// Builds the menu with every named tab closed, drawn at the top left
-    /// of the screen until `set_placement` says where it goes.
+    /// Builds the menu with every named tab closed, drawn at the top
+    /// left of the screen until `set_placement` says where it goes.
     pub fn new(tab_specs: Vec<TabSpec<G>>) -> Menu<G> {
         let tabs = tab_specs
             .into_iter()
@@ -807,8 +807,8 @@ mod tests {
         assert_eq!(menu().size().height, 7);
     }
 
-    /// Clicking a header returns no action and opens the tab, making room
-    /// for its body.
+    /// Clicking a header returns no action and opens the tab, making
+    /// room for its body.
     #[test]
     fn clicking_a_header_opens_the_tab() {
         let mut menu = menu();
