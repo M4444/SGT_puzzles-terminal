@@ -1,6 +1,7 @@
 //! Plays Fifteen in the terminal.
 
 mod fifteen;
+mod input;
 mod render;
 
 use common::canvas::{Canvas, Coord};
@@ -38,13 +39,8 @@ impl TerminalGame for Fifteen {
         match action {}
     }
 
-    /// Clicks on the board do nothing.
-    fn click_board(
-        _session: &mut Session<FifteenPuzzle>,
-        _position: Coord,
-        _button: c_int,
-    ) -> bool {
-        true
+    fn click_board(session: &mut Session<FifteenPuzzle>, position: Coord, button: c_int) -> bool {
+        input::click_board(session, position, button)
     }
 }
 

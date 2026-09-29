@@ -27,7 +27,7 @@ const UI_UNDO: c_int = 0x0213;
 const UI_REDO: c_int = 0x0214;
 
 /// Raw mouse button codes from puzzles.h's enum.
-const LEFT_BUTTON: c_int = 0x0200;
+pub const LEFT_BUTTON: c_int = 0x0200;
 pub const MIDDLE_BUTTON: c_int = 0x0201;
 const RIGHT_BUTTON: c_int = 0x0202;
 
