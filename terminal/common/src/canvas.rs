@@ -246,10 +246,11 @@ impl Rect {
     /// Whether the coordinate falls inside the rectangle. An empty one
     /// contains nothing.
     pub fn contains(self, coord: Coord) -> bool {
-        coord.x >= self.left()
-            && coord.x - self.left() < self.size.width
-            && coord.y >= self.top()
-            && coord.y - self.top() < self.size.height
+        let Some(relative) = coord.relative_to(self.top_left) else {
+            return false;
+        };
+
+        relative.x < self.size.width && relative.y < self.size.height
     }
 
     /// Every cell the rectangle covers, row by row.

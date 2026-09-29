@@ -246,21 +246,18 @@ pub(crate) fn click_tile(
     let window_offset = unsafe { window_offset() };
 
     // Centers the click in the tile.
-    let x = window_offset + line_thick + tile_x as c_int * tilesize + tilesize / 2;
-    let y = window_offset + line_thick + tile_y as c_int * tilesize + tilesize / 2;
+    let pixel_x = window_offset + line_thick + tile_x as c_int * tilesize + tilesize / 2;
+    let pixel_y = window_offset + line_thick + tile_y as c_int * tilesize + tilesize / 2;
 
-    session.process_click(x, y, button)
+    session.process_click(pixel_x, pixel_y, button)
 }
 
 /// The given tiles, without the locked ones.
-pub(crate) fn exclude_locked(
-    session: &Session<NetPuzzle>,
-    tile_coords: &[TileCoord],
-) -> Vec<TileCoord> {
+pub(crate) fn exclude_locked(puzzle: &NetPuzzle, tile_coords: &[TileCoord]) -> Vec<TileCoord> {
     tile_coords
         .iter()
         .copied()
-        .filter(|&(x, y)| !session.puzzle().tiles[y][x].locked)
+        .filter(|&(tile_x, tile_y)| !puzzle.tiles[tile_y][tile_x].locked)
         .collect()
 }
 

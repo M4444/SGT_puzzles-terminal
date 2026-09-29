@@ -17,15 +17,15 @@ pub(crate) fn take_action(action: NetAction, styles: &mut Styles) {
     }
 }
 
-/// Takes a click the menu didn't claim and sends it to the tile it
-/// resolves to, if any. Returns `false` if it signalled quit.
+/// Sends a click to the tile it resolves to, if any. Returns `false`
+/// if it signalled quit.
 pub(crate) fn click_board(
     session: &mut Session<NetPuzzle>,
     position: Coord,
     button: c_int,
 ) -> bool {
     let possible_tiles = tiles_at(position, session.puzzle().dimensions);
-    match resolve_tile(&possible_tiles, button, session) {
+    match resolve_tile(&possible_tiles, button, session.puzzle()) {
         Some(tile) => net::click_tile(session, tile, button),
         None => true,
     }
@@ -38,12 +38,12 @@ pub(crate) fn click_board(
 fn resolve_tile(
     possible_tiles: &[TileCoord],
     button: c_int,
-    session: &Session<NetPuzzle>,
+    puzzle: &NetPuzzle,
 ) -> Option<TileCoord> {
     if let [only] = possible_tiles {
         Some(*only)
     } else if button != MIDDLE_BUTTON {
-        if let [only] = net::exclude_locked(session, possible_tiles).as_slice() {
+        if let [only] = net::exclude_locked(puzzle, possible_tiles).as_slice() {
             Some(*only)
         } else {
             None

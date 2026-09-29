@@ -110,12 +110,8 @@ fn coord_to_tile_offset(
     (width, height): GridDimensions,
 ) -> Option<(TileCoord, Offset)> {
     // Left of or above the grid.
-    if coord.x < GRID_OFFSET_X || coord.y < GRID_OFFSET_Y {
-        return None;
-    }
-
-    let relative_x = coord.x - GRID_OFFSET_X;
-    let relative_y = coord.y - GRID_OFFSET_Y;
+    let Coord { x: relative_x, y: relative_y } =
+        coord.relative_to(Coord::new(GRID_OFFSET_X, GRID_OFFSET_Y))?;
 
     // Right of or below the grid.
     if relative_x >= (TILE_WIDTH - 1) * width || relative_y >= (TILE_HEIGHT - 1) * height {
