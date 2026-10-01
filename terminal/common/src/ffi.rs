@@ -1,6 +1,6 @@
 //! Raw bindings against the mid-end.
 
-use std::ffi::{CStr, c_char, c_double, c_float, c_int, c_void};
+use std::ffi::{CStr, c_char, c_double, c_int, c_void};
 use std::ptr;
 use std::ptr::NonNull;
 
@@ -75,7 +75,7 @@ unsafe extern "C" {
     fn midend_redraw(me: *mut RawMidend);
     fn midend_free(me: *mut RawMidend);
     fn midend_process_key(me: *mut RawMidend, x: c_int, y: c_int, button: c_int) -> c_int;
-    fn midend_timer(me: *mut RawMidend, tplus: c_float);
+    fn midend_stop_anim(me: *mut RawMidend);
     fn midend_size(
         me: *mut RawMidend,
         x: *mut c_int,
@@ -90,10 +90,6 @@ unsafe extern "C" {
     fn midend_set_params(me: *mut RawMidend, params: *mut RawGameParams);
     fn preset_menu_lookup_by_id(menu: *const RawPresetMenu, id: c_int) -> *mut RawGameParams;
 }
-
-/// Longer than a common animation length, so one `midend_timer` call
-/// finishes the animation.
-const SKIP_ANIMATION_TIME: c_float = 1.0;
 
 /// The value `midend_process_key` returns when it signals the front end
 /// should quit (puzzles.h's `PKR_QUIT`).
@@ -218,24 +214,23 @@ impl Midend {
         self.new_game();
     }
 
-    /// Sends one key/button press, then force-finishes any resulting
-    /// animation so the next redraw shows the real final state, rather
-    /// than the pre-move state an in-progress animation shows. Returns
-    /// `false` if the mid-end signalled `PKR_QUIT`.
+    /// Sends one key/button press, then ends any animation the move
+    /// started, since nothing ticks the mid-end's timer to play it out.
+    /// Returns `false` if the mid-end signalled `PKR_QUIT`.
     pub fn process_key(&self, button: c_int) -> bool {
         let result = unsafe { midend_process_key(self.raw.as_ptr(), 0, 0, button) };
-        unsafe { midend_timer(self.raw.as_ptr(), SKIP_ANIMATION_TIME) };
+        unsafe { midend_stop_anim(self.raw.as_ptr()) };
 
         result != PKR_QUIT
     }
 
     /// Sends one mouse button press at the given pixel coordinates,
-    /// then force-finishes any resulting animation the same way
+    /// then ends any animation the move started, the same way
     /// `process_key` does. Returns `false` if the mid-end signalled
     /// `PKR_QUIT`.
     pub fn process_click(&self, x: c_int, y: c_int, button: c_int) -> bool {
         let result = unsafe { midend_process_key(self.raw.as_ptr(), x, y, button) };
-        unsafe { midend_timer(self.raw.as_ptr(), SKIP_ANIMATION_TIME) };
+        unsafe { midend_stop_anim(self.raw.as_ptr()) };
 
         result != PKR_QUIT
     }
