@@ -164,7 +164,8 @@ impl Drop for TerminalGuard {
 }
 
 /// Runs a game, drawing it and taking events until one of them quits
-/// the game. Every event but a resize goes on to the front end.
+/// the game. Every event but a resize goes on to the front end. A
+/// frame identical to the one on screen isn't printed again.
 pub fn run<T: TerminalGame>(game: T) {
     let session = Session::start();
     let menu = Menu::new(T::tab_specs(&session.presets(), session.can_solve()));
@@ -176,15 +177,25 @@ pub fn run<T: TerminalGame>(game: T) {
     let _guard = TerminalGuard;
     let (mut columns, mut rows) = terminal::size().expect("failed to query terminal size");
 
+    // The frame last printed, or `None` before the first one
+    // and after a resize, which can change what's on screen
+    // without printing anything.
+    let mut printed: Option<String> = None;
+
     let mut game_running = true;
     while game_running {
-        print_output(&frontend.render(columns.into()), rows.into());
+        let output = frontend.render(columns.into());
+        if printed.as_ref() != Some(&output) {
+            print_output(&output, rows.into());
+            printed = Some(output);
+        }
 
         let event = event::read().expect("failed to read input event");
         game_running = match event {
             Event::Resize(new_columns, new_rows) => {
                 columns = new_columns;
                 rows = new_rows;
+                printed = None;
                 true
             }
             event => frontend.take_event(event),
