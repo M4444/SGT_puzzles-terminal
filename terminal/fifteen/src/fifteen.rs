@@ -155,6 +155,7 @@ pub(crate) fn gap_position(puzzle: &FifteenPuzzle) -> TileCoord {
 mod tests {
     use super::*;
     use common::input::LEFT_BUTTON;
+    use std::time::Duration;
 
     /// Clicking the tile beside the gap slides it in, leaving the gap
     /// where the tile was, which only works if the click reached
@@ -172,6 +173,27 @@ mod tests {
         click_tile(&mut session, tile, LEFT_BUTTON);
 
         assert_eq!(gap_position(session.puzzle()), tile);
+    }
+
+    /// Solving the puzzle starts the flash, which keeps the mid-end's
+    /// timer on until the flash has had its time.
+    #[test]
+    fn solving_the_puzzle_runs_the_timer_until_the_flash_ends() {
+        let mut session = Session::<FifteenPuzzle>::start();
+
+        // Each 'h' plays a suggested move. Enough of them solve the
+        // puzzle without counting as using the solver.
+        for _ in 0..10_000 {
+            if session.is_timer_active() {
+                break;
+            }
+            session.process_key('h' as c_int);
+        }
+        assert!(session.puzzle().status.starts_with("COMPLETED"));
+        assert!(session.is_timer_active());
+
+        session.timer(Duration::from_secs(1));
+        assert!(!session.is_timer_active());
     }
 
     /// The one preset's board, with one gap among the fifteen numbers.

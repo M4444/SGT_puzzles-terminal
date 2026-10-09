@@ -3,6 +3,7 @@
 
 use crate::ffi::{self, Midend, Preset};
 use std::ffi::{c_int, c_void};
+use std::time::Duration;
 
 /// What `dr->handle` points at, recovered by every drawing-API
 /// callback. `P` is the game's own puzzle type, which its callbacks
@@ -98,5 +99,17 @@ impl<P> Session<P> {
     /// a tile into the pixel coordinates `process_click` expects.
     pub fn tilesize(&self) -> c_int {
         self.midend.tilesize()
+    }
+
+    /// Whether the mid-end wants time passed to it through `timer`.
+    pub fn is_timer_active(&self) -> bool {
+        self.midend.is_timer_active()
+    }
+
+    /// Moves any animation or flash on by `elapsed`, the time since
+    /// the last call or since the mid-end asked for calls, redrawing if
+    /// one was running.
+    pub fn timer(&mut self, elapsed: Duration) {
+        self.midend.timer(elapsed);
     }
 }

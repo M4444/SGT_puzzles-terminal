@@ -1,8 +1,10 @@
 //! Raw bindings against the mid-end.
 
-use std::ffi::{CStr, c_char, c_double, c_int, c_void};
+use std::cell::Cell;
+use std::ffi::{CStr, c_char, c_double, c_float, c_int, c_void};
 use std::ptr;
 use std::ptr::NonNull;
+use std::time::Duration;
 
 #[repr(C)]
 struct RawMidend {
@@ -76,6 +78,7 @@ unsafe extern "C" {
     fn midend_free(me: *mut RawMidend);
     fn midend_process_key(me: *mut RawMidend, x: c_int, y: c_int, button: c_int) -> c_int;
     fn midend_stop_anim(me: *mut RawMidend);
+    fn midend_timer(me: *mut RawMidend, tplus: c_float);
     fn midend_size(
         me: *mut RawMidend,
         x: *mut c_int,
@@ -104,6 +107,10 @@ const NO_PRESET: c_int = -1;
 /// since each game hands its state to Rust through its own hooks.
 pub(crate) struct Midend {
     raw: NonNull<RawMidend>,
+    /// Whether the mid-end wants `midend_timer` called. The mid-end
+    /// holds it as its front end and hands it back to `activate_timer`
+    /// and `deactivate_timer`.
+    timer_active: Box<Cell<bool>>,
 }
 
 /// One preset the mid-end offers, under the id it allocated for it.
@@ -126,10 +133,13 @@ impl Midend {
         drapi: *const RawDrawingApi,
         drhandle: *mut c_void,
     ) -> Midend {
-        let raw = unsafe { midend_new(ptr::null_mut(), game, drapi, drhandle) };
+        let timer_active = Box::new(Cell::new(false));
+        let frontend = &*timer_active as *const Cell<bool> as *mut c_void;
+
+        let raw = unsafe { midend_new(frontend, game, drapi, drhandle) };
         let raw = NonNull::new(raw).expect("midend_new returned null");
 
-        Midend { raw }
+        Midend { raw, timer_active }
     }
 
     /// Settles the mid-end on the backend's own preferred tile size
@@ -234,6 +244,18 @@ impl Midend {
 
         result != PKR_QUIT
     }
+
+    /// Whether the mid-end wants `timer` called.
+    pub fn is_timer_active(&self) -> bool {
+        self.timer_active.get()
+    }
+
+    /// Moves any animation or flash on by `elapsed`, the time since
+    /// the last call or since the mid-end asked for calls, redrawing if
+    /// one was running.
+    pub fn timer(&self, elapsed: Duration) {
+        unsafe { midend_timer(self.raw.as_ptr(), elapsed.as_secs_f32()) };
+    }
 }
 
 /// Walks one level of the preset menu, following submenus down.
@@ -256,6 +278,20 @@ impl Drop for Midend {
     fn drop(&mut self) {
         unsafe { midend_free(self.raw.as_ptr()) };
     }
+}
+
+/// Called from terminal.c's `activate_timer`, with the front end the
+/// mid-end was created with.
+#[unsafe(no_mangle)]
+extern "C" fn rust_activate_timer(frontend: *const Cell<bool>) {
+    unsafe { &*frontend }.set(true);
+}
+
+/// Called from terminal.c's `deactivate_timer`, with the front end the
+/// mid-end was created with.
+#[unsafe(no_mangle)]
+extern "C" fn rust_deactivate_timer(frontend: *const Cell<bool>) {
+    unsafe { &*frontend }.set(false);
 }
 
 unsafe extern "C" {

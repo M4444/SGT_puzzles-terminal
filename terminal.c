@@ -4,8 +4,10 @@
  * API shared by every game. Every drawing call here is a no-op, since
  * this front end renders text directly. The exceptions are
  * status_bar() and emit_state(), which hand the status line text and
- * the game state to the Rust side. Alongside the stubs, can_solve()
- * reports whether the game has a solver.
+ * the game state to the Rust side, and activate_timer() and
+ * deactivate_timer(), which tell it whether to call midend_timer().
+ * Alongside the stubs, can_solve() reports whether the game has a
+ * solver.
  * Each game's own file, terminal/<game>/terminal-<game>.c, holds what
  * only that game needs.
  */
@@ -15,13 +17,15 @@
 #include "puzzles.h"
 
 extern void rust_status_bar(drawing *dr, const char *text);
+extern void rust_activate_timer(frontend *fe);
+extern void rust_deactivate_timer(frontend *fe);
 #ifdef EXPOSE_GAME_STATE
 extern void rust_emit_state(drawing *dr, const void *data);
 #endif
 
 void frontend_default_colour(frontend *fe, float *output) {}
-void deactivate_timer(frontend *fe) {}
-void activate_timer(frontend *fe) {}
+void deactivate_timer(frontend *fe) { rust_deactivate_timer(fe); }
+void activate_timer(frontend *fe) { rust_activate_timer(fe); }
 drawing *drawing_new(const drawing_api *api, midend *me, void *handle)
 {
     drawing *dr = snew(drawing);

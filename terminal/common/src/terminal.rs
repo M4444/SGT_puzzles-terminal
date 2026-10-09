@@ -15,6 +15,7 @@ use std::ffi::c_int;
 use std::io::{Write, stdout};
 use std::panic;
 use std::thread;
+use std::time::{Duration, Instant};
 
 /// A game's own tabs, board drawing, menu actions and board clicks.
 /// The type that implements it holds any settings only that game has.
@@ -163,6 +164,10 @@ impl Drop for TerminalGuard {
     }
 }
 
+/// How long to wait for input before passing time to the mid-end,
+/// while it wants any.
+const TICK_INTERVAL: Duration = Duration::from_millis(20);
+
 /// Runs a game, drawing it and taking events until one of them quits
 /// the game. Every event but a resize goes on to the front end. A
 /// frame identical to the one on screen isn't printed again.
@@ -181,6 +186,9 @@ pub fn run<T: TerminalGame>(game: T) {
     // and after a resize, which can change what's on screen
     // without printing anything.
     let mut printed: Option<String> = None;
+    // When time was last passed to the mid-end, or when it started
+    // wanting ticks, or `None` while it doesn't.
+    let mut last_tick: Option<Instant> = None;
 
     let mut game_running = true;
     while game_running {
@@ -188,6 +196,20 @@ pub fn run<T: TerminalGame>(game: T) {
         if printed.as_ref() != Some(&output) {
             print_output(&output, rows.into());
             printed = Some(output);
+        }
+
+        if frontend.session.is_timer_active() {
+            let counted_from = *last_tick.get_or_insert_with(Instant::now);
+
+            if !event::poll(TICK_INTERVAL).expect("failed to poll for input events") {
+                let now = Instant::now();
+                frontend.session.timer(now - counted_from);
+                last_tick = Some(now);
+
+                continue;
+            }
+        } else {
+            last_tick = None;
         }
 
         let event = event::read().expect("failed to read input event");
